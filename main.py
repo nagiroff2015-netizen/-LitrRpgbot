@@ -59,11 +59,12 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        args = message.text.split()
+        args = message.text.split(maxsplit=2)
         if len(args) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
+        # ЖЕЛЕЗОБЕТОННЫЙ ФИКС: Извлекаем чистые слова из списка строк по их точным индексам
         world_id = args[1].strip().lower()
         world_name = args[2].strip()
         user_id = message.from_user.id
@@ -72,6 +73,7 @@ def join_world(message):
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
+        # Полностью очищаем старые забагованные скобки из базы данных
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -127,6 +129,7 @@ def handle_game_action(message):
             conn.close()
             return
         
+        # Получаем очищенные текстовые значения из кортежа SQLite
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -167,7 +170,6 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
-        # ИСПРАВЛЕНО: Указан верный технический эндпоинт SambaNova Cloud API
         response = requests.post("https://sambanova.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
@@ -184,7 +186,6 @@ def handle_game_action(message):
                 data_parsed = json.loads(json_str)
                 conn = sqlite3.connect('litrpg_game.db')
                 cursor = conn.cursor()
-                # ИСПРАВЛЕНО: Закрыт SQL-синтаксис запроса базы данных и убрана лишняя запятая
                 cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
                                (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
