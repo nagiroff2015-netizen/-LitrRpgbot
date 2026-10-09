@@ -63,7 +63,6 @@ def join_world(message):
         bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
         return
     
-    # ФИКС: Корректно извлекаем элементы из списка по индексам
     world_id = args[1].strip().lower()
     world_name = args[2].strip()
     user_id = message.from_user.id
@@ -127,9 +126,9 @@ def handle_game_action(message):
 
     system_prompt = (
         f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория последних событий:\n{world_history}\n"
-        f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\nДействие: \"{action}\"\n"
+        f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\n"
         "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
-        f"UPDATE_DATA: {{\"level\": {player[3]}, \"hp\": {player[4]}, \"mp\": {player[6]}, \"gold\": {player[8]}, \"inventory\": \"{player[9]}\", \"location\": \"{player[10]}\"}}\n"
+        "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
         "Изменяй значения в JSON в зависимости от происходящего в мире (получил опыт/урон, нашел золото, сменил локацию)."
     )
 
@@ -138,14 +137,18 @@ def handle_game_action(message):
             "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
             "Content-Type": "application/json"
         }
+        # ФИКС: Передаем данные в строгом многоролевом формате API SambaNova
         data = {
             "model": MODEL_NAME,
-            "messages": [{"role": "user", "content": system_prompt}],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": action}
+            ],
             "temperature": 0.7
         }
         response = requests.post("https://sambanova.ai", headers=headers, json=data)
         response_json = response.json()
-        ai_reply = response_json['choices']['message']['content']
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -167,7 +170,7 @@ def handle_game_action(message):
                 print("Ошибка БД:", e)
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Ошибка обработки мира ИИ. Попробуйте еще раз.")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите действие.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
