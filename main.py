@@ -59,21 +59,21 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        args = message.text.split(maxsplit=2)
-        if len(args) < 3:
+        # ИСПРАВЛЕНО: Безопасное извлечение аргументов через разделение строки по пробелам
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ЖЕЛЕЗОБЕТОННЫЙ ФИКС: Извлекаем чистые слова из списка строк по их точным индексам
-        world_id = args[1].strip().lower()
-        world_name = args[2].strip()
+        world_id = parts[1].strip().lower()
+        world_name = parts[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Полностью очищаем старые забагованные скобки из базы данных
+        # Полностью очищаем старые забагованные записи
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -129,7 +129,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Получаем очищенные текстовые значения из кортежа SQLite
+        # ЖЕЛЕЗОБЕТОННЫЙ ФИКС: Вытаскиваем значения строго по фиксированным индексам колонок SQLite
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
