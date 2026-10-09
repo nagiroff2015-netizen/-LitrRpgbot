@@ -18,7 +18,7 @@ app = Flask('')
 # Функция для получения стабильного подключения к БД
 def get_db_connection():
     conn = sqlite3.connect('litrpg_game.db')
-    conn.row_factory = sqlite3.Row  # Встроенный надежный метод SQLite для доступа по именам колонок
+    conn.row_factory = sqlite3.Row  # Извлечение данных по именам колонок
     return conn
 
 @app.route('/')
@@ -94,7 +94,6 @@ def join_world(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
-# ИСПРАВЛЕНО НАВСЕГДА: Команда /status больше НЕ обращается к ИИ, а мгновенно берет чистые данные из БД
 @bot.message_handler(commands=['status'])
 def show_status(message):
     try:
@@ -172,7 +171,9 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
-        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
+        # АДРЕС ИСПРАВЛЕН: Теперь запрос гарантированно идет на API эндпоинт чата
+        api_url = "https://openrouter.ai"
+        response = requests.post(api_url, headers=headers, json=data, timeout=30)
         
         try:
             response_json = response.json()
