@@ -158,7 +158,7 @@ def handle_game_action(message):
     )
 
     try:
-        # Официальный вызов библиотеки openai
+        # ИСПРАВЛЕНО: Официальный вызов библиотеки openai через объекты
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": system_prompt}]
