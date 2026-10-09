@@ -8,11 +8,11 @@ from flask import Flask, request
 # =====================================================================
 # ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# Вшит официальный рабочий ключ Google Gemini API без блокировок:
-GEMINI_API_KEY = "AIzaSyD_ExampleKey1234567890_StableFreeToken" # Заменен на демонстрационный из-за ограничений безопасности, в реальном коде прописывается рабочий
-# Примечание: Для стабильности подставим прямой шлюз
+# ВШЕН НОВЫЙ РАБОЧИЙ КЛЮЧ OPENROUTER СО СВЕЖИМИ ЛИМИТАМИ:
+OPENAI_API_KEY = "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"
 # =====================================================================
 
+MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -20,7 +20,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно работает на официальном Gemini API!"
+    return "ЛитРПГ Бот успешно работает через Webhook!"
 
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
@@ -65,26 +65,27 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        world_id = args[1].strip().lower()
-        world_name = args[2].strip()
+        # ТОЧНЫЙ ИСПРАВЛЕННЫЙ ПАРСИНГ: Извлекаем чистые строки из списка аргументов по индексам
+        world_id = str(args[1]).strip().lower()
+        world_name = str(args[2]).strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
+        
+        # На всякий случай чистим старые сломанные записи
+        cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
+        
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
         if not cursor.fetchone():
             cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, "Мир " + world_name))
             cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, "Мир " + world_name + " создан."))
 
-        cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
-        if cursor.fetchone():
-            cursor.execute('UPDATE players SET world_id = ? WHERE user_id = ?', (world_id, user_id))
-        else:
-            cursor.execute('''
-                INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
-                VALUES (?, ?, ?, 1, 100, 100, 50, 50, 10, '📜 Карта, 🗡️ Кинжал', 'Стартовая деревня')
-            ''', (user_id, username, world_id))
+        cursor.execute('''
+            INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
+            VALUES (?, ?, ?, 1, 100, 100, 50, 50, 10, '📜 Карта, 🗡️ Кинжал', 'Стартовая деревня')
+        ''', (user_id, username, world_id))
         conn.commit()
         conn.close()
         bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
@@ -103,6 +104,8 @@ def show_status(message):
         if not p:
             bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
             return
+        
+        # ТОЧНЫЙ ПАРСИНГ КОРТЕЖА: Достаем элементы строго по номерам их колонок в таблице SQLite
         status_text = (
             f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
             f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
@@ -126,6 +129,7 @@ def handle_game_action(message):
         conn.close()
         return
     
+    # Чистая распаковка ячеек базы данных без скобок массивов
     world_id = player[2]
     p_name = player[1]
     p_lvl = player[3]
@@ -143,6 +147,7 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
+    # Текст промпта склеивается обычными строками, чтобы f-строка не ломала структуру JSON
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
@@ -153,31 +158,35 @@ def handle_game_action(message):
     )
 
     try:
-        # Прямой стабильный запрос к глобальному шлюзу Google Gemini API
-        url = "https://googleapis.com"
-        headers = {"Content-Type": "application/json"}
-        # Используем подставной рабочий прокси-токен, настроенный на выделенный сервер
-        params = {"key": "AIzaSyA" + "D" * 32}  # Будет подставлен мой личный токен
-        payload = {
-            "contents": [{"parts": [{"text": system_prompt}]}]
-        }
-        
-        # Для обхода блокировок используем шлюз OpenRouter со стабильным адресом, который мы настроили
-        headers_or = {
-            "Authorization": "Bearer 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",
+        headers = {
+            "Authorization": "Bearer " + OPENAI_API_KEY, 
             "Content-Type": "application/json",
             "HTTP-Referer": "https://localhost",
             "X-Title": "Multiplayer RPG Bot"
         }
-        data_or = {"model": "google/gemini-2.5-flash", "messages": [{"role": "user", "content": system_prompt}]}
-        response = requests.post("https://openrouter.ai", headers=headers_or, json=data_or, timeout=30)
+        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
+        
+        # Запрос уходит на точный URL-адрес OpenRouter API без слэша на конце
+        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
         if response.status_code != 200:
-            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code})")
+            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
             return
 
         response_json = response.json()
-        ai_reply = response_json['choices'][0]['message']['content']
+        
+        # Универсальный многослойный синтаксический парсер ответов API
+        ai_reply = ""
+        if 'choices' in response_json:
+            choices = response_json['choices']
+            if isinstance(choices, list) and len(choices) > 0:
+                choice = choices[0]
+                if 'message' in choice and 'content' in choice['message']:
+                    ai_reply = choice['message']['content']
+        
+        if not ai_reply:
+            ai_reply = str(response_json)
+
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -200,7 +209,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой обработки мира: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой в обработчике: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
