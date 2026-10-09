@@ -15,14 +15,10 @@ MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
-class RowObject:
-    def __init__(self, cursor, row):
-        for idx, col in enumerate(cursor.description):
-            setattr(self, col, row[idx])
-
+# Функция для получения стабильного подключения к БД
 def get_db_connection():
     conn = sqlite3.connect('litrpg_game.db')
-    conn.row_factory = RowObject
+    conn.row_factory = sqlite3.Row  # Встроенный надежный метод SQLite для доступа по именам колонок
     return conn
 
 @app.route('/')
@@ -113,8 +109,8 @@ def show_status(message):
             return
             
         status_text = (
-            f"👤 **Игрок:** {p.username}\n📍 **Локация:** {p.location}\n📊 **Уровень:** {p.level}\n"
-            f"❤️ **HP:** {p.hp}/{p.max_hp}\n🧪 **MP:** {p.mp}/{p.max_mp}\n💰 **Золото:** {p.gold}\n🎒 **Инвентарь:** {p.inventory}"
+            f"👤 **Игрок:** {p['username']}\n📍 **Локация:** {p['location']}\n📊 **Уровень:** {p['level']}\n"
+            f"❤️ **HP:** {p['hp']}/{p['max_hp']}\n🧪 **MP:** {p['mp']}/{p['max_mp']}\n💰 **Золото:** {p['gold']}\n🎒 **Инвентарь:** {p['inventory']}"
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
@@ -136,22 +132,22 @@ def handle_game_action(message):
             conn.close()
             return
         
-        world_id = str(player.world_id)
-        p_name = str(player.username)
-        p_lvl = str(player.level)
-        p_hp = str(player.hp)
-        p_max_hp = str(player.max_hp)
-        p_mp = str(player.mp)
-        p_max_mp = str(player.max_mp)
-        p_gold = str(player.gold)
-        p_inv = str(player.inventory)
-        p_loc = str(player.location)
+        world_id = str(player['world_id'])
+        p_name = str(player['username'])
+        p_lvl = str(player['level'])
+        p_hp = str(player['hp'])
+        p_max_hp = str(player['max_hp'])
+        p_mp = str(player['mp'])
+        p_max_mp = str(player['max_mp'])
+        p_gold = str(player['gold'])
+        p_inv = str(player['inventory'])
+        p_loc = str(player['location'])
 
         cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-        players_info = "\n".join([f"- {row.username} (Ур. {row.level}, HP: {row.hp}, {row.location})" for row in cursor.fetchall()])
+        players_info = "\n".join([f"- {row['username']} (Ур. {row['level']}, HP: {row['hp']}, {row['location']})" for row in cursor.fetchall()])
         
         cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-        world_history = "\n".join([str(l.entry) for l in reversed(cursor.fetchall())])
+        world_history = "\n".join([str(l['entry']) for l in reversed(cursor.fetchall())])
         conn.close()
 
         system_prompt = (
@@ -177,14 +173,12 @@ def handle_game_action(message):
         
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
-        # Безопасно проверяем, пришел ли вообще JSON-текст
         try:
             response_json = response.json()
         except Exception:
             bot.reply_to(message, f"❌ Сервер прислал не JSON-текст. Статус: {response.status_code}\nОтвет: {response.text[:300]}")
             return
 
-        # Проверяем, нет ли ошибки внутри JSON-ответа OpenRouter
         if "error" in response_json:
             error_msg = response_json["error"].get("message", "Неизвестная ошибка")
             bot.reply_to(message, f"❌ Ошибка шлюза OpenRouter API:\n`{error_msg}`", parse_mode='Markdown')
