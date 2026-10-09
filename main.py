@@ -6,13 +6,10 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШ ТЕКУЩИЙ РАБОЧИЙ КЛЮЧ OPENROUTER
+# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧ ИИ БОЛЬШЕ НЕ НУЖЕН!)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
 # =====================================================================
 
-# Заменили модель на более стабильную и быструю
-MODEL_NAME = "google/gemini-2.5-flash:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -23,7 +20,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно работает через стабильный шлюз!"
+    return "ЛитРПГ Бот на стабильном шлюзе DuckDuckGo запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -49,6 +46,54 @@ def init_db():
     conn.close()
 
 init_db()
+
+# Функция для запроса к ИИ через бесплатный анонимный шлюз DuckDuckGo
+def ask_duckduckgo_ai(system_prompt, user_action):
+    try:
+        session = requests.Session()
+        # Шаг 1: Получаем обязательный внутренний токен шлюза
+        v_headers = {"x-client-variant": "chat", "User-Agent": "Mozilla/5.0"}
+        v_res = session.get("https://duckduckgo.com", headers=v_headers, timeout=10)
+        v_token = v_res.headers.get("x-vqd-4")
+        
+        if not v_token:
+            return "ERROR: Не удалось получить доступ к шлюзу."
+
+        # Шаг 2: Отправляем запрос в модель Llama-3-70b
+        chat_headers = {
+            "x-client-variant": "chat",
+            "x-vqd-4": v_token,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0"
+        }
+        
+        payload = {
+            "model": "meta-llama/Meta-Llama-3-70B-Instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_action}
+            ]
+        }
+        
+        res = session.post("https://duckduckgo.com", headers=chat_headers, json=payload, timeout=25)
+        
+        # Парсим потоковый ответ в обычный текст
+        text_response = ""
+        for line in res.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith("data: "):
+                    data_str = decoded_line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data_json = json.loads(data_str)
+                        text_response += data_json.get("message", "")
+                    except Exception:
+                        continue
+        return text_response.strip()
+    except Exception as e:
+        return f"ERROR: Сбой сети шлюза: {str(e)}"
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -159,35 +204,13 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в мире."
         )
 
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com",
-            "X-Title": "TelegramLitRPGGameBot"
-        }
-        data = {
-            "model": MODEL_NAME,
-            "messages": [{"role": "user", "content": system_prompt}],
-            "temperature": 0.7
-        }
-        
-        # ТОЧНЫЙ АДРЕС API ДЛЯ ЗАПРОСОВ К МОДЕЛЯМ
-        api_url = "https://openrouter.ai"
-        response = requests.post(api_url, headers=headers, json=data, timeout=30)
-        
-        try:
-            response_json = response.json()
-        except Exception:
-            clean_text = response.text.replace("<html>", "").replace("<body>", "").strip()[:200]
-            bot.reply_to(message, f"❌ Защита шлюза отклонила запрос.\nСтатус: {response.status_code}\nОтвет: {clean_text}")
+        # Вызов ИИ через бесплатный анонимный шлюз без API ключей
+        ai_reply = ask_duckduckgo_ai(system_prompt, action)
+
+        if ai_reply.startswith("ERROR:"):
+            bot.reply_to(message, f"❌ Ошибка шлюза ИИ:\n{ai_reply}")
             return
 
-        if "error" in response_json:
-            error_msg = response_json["error"].get("message", "Неизвестная ошибка")
-            bot.reply_to(message, f"❌ Ошибка шлюза OpenRouter API:\n`{error_msg}`", parse_mode='Markdown')
-            return
-
-        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -207,13 +230,3 @@ def handle_game_action(message):
                 conn.commit()
                 conn.close()
             except Exception as json_error:
-                print(f"Ошибка парсинга JSON: {str(json_error)}")
-        
-        bot.reply_to(message, display_text)
-
-    except Exception as e:
-        print(f"Общая ошибка: {str(e)}")
-        bot.reply_to(message, f"⚠️ Не удалось обработать действие.\nОшибка: {str(e)}")
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
