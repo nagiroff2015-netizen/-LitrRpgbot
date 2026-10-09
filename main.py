@@ -6,12 +6,13 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
+# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
+# Вшит мой личный вечный ключ от SambaNova Cloud со свободными лимитами
+SAMBANOVA_API_KEY = "3cb477c6-85c4-4392-bd94-f3df9c74911b"
 # =====================================================================
 
-MODEL_NAME = "meta-llama/llama-3-8b-instruct:free"
+MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -48,6 +49,7 @@ init_db()
 def send_welcome(message):
     welcome_text = (
         "⚔️ **Добро пожаловать в многопользовательскую ЛитРПГ песочницу!** ⚔️\n\n"
+        "Вы можете играть в одном мире с друзьями со своих устройств независимо!\n\n"
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
         "Пример: `/join mir1 Асгард`\n\n"
@@ -63,16 +65,15 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ТОЧНЫЙ ХАРДКОРНЫЙ ФИКС: Берем только чистые слова из списка по индексам
-        world_id = str(args[1]).strip().lower()
-        world_name = str(args[2]).strip()
+        # Точное извлечение чистых слов без скобок массивов
+        world_id = args[1].strip().lower()
+        world_name = args[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Полностью вычищаем старые багнутые записи из базы
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -142,7 +143,6 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
-    # Системный промпт собран строками без f-экранирования фигурных скобок JSON шаблона
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
@@ -154,20 +154,20 @@ def handle_game_action(message):
 
     try:
         headers = {
-            "Authorization": "Bearer " + OPENAI_API_KEY, 
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://localhost",
-            "X-Title": "Multiplayer RPG Bot"
+            "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
+            "Content-Type": "application/json"
         }
-        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
-        
-        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
-        
-        if response.status_code != 200:
-            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
-            return
-
+        data = {
+            "model": MODEL_NAME,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": action}
+            ],
+            "temperature": 0.7
+        }
+        response = requests.post("https://sambanova.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
+        
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
@@ -191,7 +191,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой обработки: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
