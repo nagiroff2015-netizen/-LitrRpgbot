@@ -8,7 +8,6 @@ from flask import Flask, request
 # =====================================================================
 # ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# Вшит мой личный вечный ключ от SambaNova Cloud со свободными лимитами
 SAMBANOVA_API_KEY = "3cb477c6-85c4-4392-bd94-f3df9c74911b"
 # =====================================================================
 
@@ -65,7 +64,6 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # Точное извлечение чистых слов без скобок массивов
         world_id = args[1].strip().lower()
         world_name = args[2].strip()
         user_id = message.from_user.id
@@ -126,27 +124,28 @@ def handle_game_action(message):
         conn.close()
         return
     
-    world_id = player[2]
-    p_name = player[1]
-    p_lvl = player[3]
-    p_hp = player[4]
-    p_max_hp = player[5]
-    p_mp = player[6]
-    p_max_mp = player[7]
-    p_gold = player[8]
-    p_inv = player[9]
-    p_loc = player[10]
+    # ИСПРАВЛЕНО: Распаковываем ячейки базы данных строго по индексам в чистые строки
+    world_id = str(player[2])
+    p_name = str(player[1])
+    p_lvl = str(player[3])
+    p_hp = str(player[4])
+    p_max_hp = str(player[5])
+    p_mp = str(player[6])
+    p_max_mp = str(player[7])
+    p_gold = str(player[8])
+    p_inv = str(player[9])
+    p_loc = str(player[10])
 
     cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-    players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, Локация: {p[3]})" for p in cursor.fetchall()])
+    players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, {p[3]})" for p in cursor.fetchall()])
     cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
-        f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
-        f"Действие игрока: \"{action}\"\n\n"
+        "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
+        "Действие игрока: \"" + action + "\"\n\n"
         "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
         "Изменяй значения в JSON в зависимости от происходящего в мире."
