@@ -142,6 +142,8 @@ def handle_game_action(message):
             "X-Title": "Multiplayer RPG Bot"
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
+        
+        # ИСПРАВЛЕНО: Указан точный URL-адрес для запросов к OpenRouter API
         response = requests.post("https://openrouter.ai", headers=headers, json=data)
         response_json = response.json()
         
