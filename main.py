@@ -10,7 +10,7 @@ from flask import Flask, request
 # ВАШ ТОКЕН ТЕЛЕГРАМ АВТОМАТИЧЕСКИ ПОДТЯГИВАЕТСЯ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 # ЖЕСТКО ВШИТЫЙ БЕСПЛАТНЫЙ КЛЮЧ ДЛЯ СЕРВЕРА HUGGING FACE
-HF_TOKEN = "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"
+HF_TOKEN = "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"
 # =====================================================================
 
 API_URL = "https://huggingface.co"
