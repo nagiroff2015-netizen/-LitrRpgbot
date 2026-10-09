@@ -64,6 +64,7 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
+        # ИСПРАВЛЕНО: Правильное обращение к элементам списка строк
         world_id = args[1].strip().lower()
         world_name = args[2].strip()
         user_id = message.from_user.id
@@ -103,12 +104,9 @@ def show_status(message):
             bot.reply_to(message, "❌ Используйте /join")
             return
             
-        # Распаковка кортежа без использования числовых индексов
-        p_uid, p_user, p_wid, p_lvl, p_hp, p_mhp, p_mp, p_mmp, p_gld, p_inv, p_loc = p
-        
         status_text = (
-            f"👤 **Игрок:** {p_user}\n📍 **Локация:** {p_loc}\n📊 **Уровень:** {p_lvl}\n"
-            f"❤️ **HP:** {p_hp}/{p_mhp}\n🧪 **MP:** {p_mp}/{p_mmp}\n💰 **Золото:** {p_gld}\n🎒 **Инвентарь:** {p_inv}"
+            f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
+            f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
@@ -116,61 +114,48 @@ def show_status(message):
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
-    user_id = message.from_user.id
-    action = message.text
-    
-    conn = sqlite3.connect('litrpg_game.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location FROM players WHERE user_id = ?', (user_id,))
-    player = cursor.fetchone()
-    
-    if not player:
-        bot.reply_to(message, "❌ Пожалуйста, сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
-        conn.close()
-        return
-    
-    # Полная безопасная распаковка игрока без квадратных скобок
-    pl_uid, pl_user, pl_wid, pl_lvl, pl_hp, pl_mhp, pl_mp, pl_mmp, pl_gld, pl_inv, pl_loc = player
-
-    world_id = str(pl_wid)
-    p_name = str(pl_user)
-    p_lvl = str(pl_lvl)
-    p_hp = str(pl_hp)
-    p_max_hp = str(pl_mhp)
-    p_mp = str(pl_mp)
-    p_max_mp = str(pl_mmp)
-    p_gold = str(pl_gld)
-    p_inv = str(pl_inv)
-    p_loc = str(pl_loc)
-
-    cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-    
-    # Безопасная сборка информации о других игроках
-    players_list = []
-    for row in cursor.fetchall():
-        r_name, r_lvl, r_hp, r_loc = row
-        players_list.append(f"- {r_name} (Ур. {r_lvl}, HP: {r_hp}, {r_loc})")
-    players_info = "\n".join(players_list)
-    
-    cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-    
-    logs_list = []
-    for row in reversed(cursor.fetchall()):
-        logs_list.append(str(row[0]))
-    world_history = "\n".join(logs_list)
-    
-    conn.close()
-
-    system_prompt = (
-        "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
-        "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
-        "Действие игрока: \"" + action + "\"\n\n"
-        "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
-        "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-        "Изменяй значения in JSON в зависимости от происходящего в мире."
-    )
-
     try:
+        user_id = message.from_user.id
+        action = message.text
+        
+        conn = sqlite3.connect('litrpg_game.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location FROM players WHERE user_id = ?', (user_id,))
+        player = cursor.fetchone()
+        
+        if not player:
+            bot.reply_to(message, "❌ Пожалуйста, сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
+            conn.close()
+            return
+        
+        # Получаем данные из кортежа бд по точным индексам колонок
+        world_id = str(player[2])
+        p_name = str(player[1])
+        p_lvl = str(player[3])
+        p_hp = str(player[4])
+        p_max_hp = str(player[5])
+        p_mp = str(player[6])
+        p_max_mp = str(player[7])
+        p_gold = str(player[8])
+        p_inv = str(player[9])
+        p_loc = str(player[10])
+
+        cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
+        players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, {p[3]})" for p in cursor.fetchall()])
+        
+        cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
+        world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
+        conn.close()
+
+        system_prompt = (
+            "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
+            "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
+            "Действие игрока: \"" + action + "\"\n\n"
+            "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
+            "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
+            "Изменяй значения в JSON в зависимости от происходящего в мире."
+        )
+
         headers = {
             "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
             "Content-Type": "application/json"
