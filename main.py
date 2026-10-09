@@ -2,8 +2,7 @@ import os
 import json
 import sqlite3
 import telebot
-import requests
-from threading import Thread
+from openai import OpenAI
 from flask import Flask, request
 
 # =====================================================================
@@ -15,6 +14,15 @@ OPENAI_API_KEY = "sk-or-v1-77f7da0a7e148054767ecb2169c3dec58c90b5c6646e04404c31a
 MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
+
+# Подключение к OpenRouter через официальную библиотеку
+client = OpenAI(
+    base_url="https://openrouter.ai",
+    api_key=OPENAI_API_KEY,
+    default_headers={
+        "X-Title": "Multiplayer RPG Bot",
+    }
+)
 
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
@@ -150,28 +158,12 @@ def handle_game_action(message):
     )
 
     try:
-        headers = {
-            "Authorization": "Bearer " + OPENAI_API_KEY, 
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://localhost",
-            "X-Title": "Multiplayer RPG Bot"
-        }
-        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
-        
-        # ФИКС: Добавлен обязательный слэш на конце URL-адреса OpenRouter
-        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
-        
-        if response.status_code != 200:
-            bot.send_message(message.chat.id, f"❌ Ошибка сервера OpenRouter (Код {response.status_code}):\n{response.text[:200]}")
-            return
-            
-        try:
-            response_json = response.json()
-        except Exception:
-            bot.send_message(message.chat.id, f"❌ Ошибка разбора ответа сервера:\n{response.text[:200]}")
-            return
-        
-        ai_reply = response_json['choices'][0]['message']['content']
+        # Официальный вызов библиотеки openai
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": system_prompt}]
+        )
+        ai_reply = response.choices[0].message.content
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -194,7 +186,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой в коде: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
