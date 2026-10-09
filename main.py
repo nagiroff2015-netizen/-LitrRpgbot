@@ -64,16 +64,16 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # СИНТАКСИЧЕСКИЙ ФИКС: Извлекаем элементы строки из индексов списка, а не из всего массива сразу
-        world_id = parts[1].strip().lower()
-        world_name = parts[2].strip()
+        # СУПЕРФИКС: Берем элементы списка по индексам и очищаем их как отдельные строки
+        world_id = str(parts[1]).strip().lower()
+        world_name = str(parts[2]).strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Полностью очищаем старые записи
+        # Полностью очищаем старые багнутые профили
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -129,7 +129,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # СИНТАКСИЧЕСКИЙ ФИКС: Извлекаем текстовые значения по точным номерам колонок кортежа SQLite
+        # Извлекаем строковые значения по точным номерам колонок кортежа SQLite
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
