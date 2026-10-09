@@ -66,8 +66,9 @@ def join_world(message):
         bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
         return
     
-    world_id = args.lower()
-    world_name = args
+    # ИСПРАВЛЕНО: Безопасное извлечение элементов из списка аргументов
+    world_id = args[1].strip().lower()
+    world_name = args[2].strip()
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
 
@@ -102,8 +103,8 @@ def show_status(message):
         bot.reply_to(message, "❌ Используйте /join")
         return
     status_text = (
-        f"👤 **Игрок:** {p}\n📍 **Локация:** {p}\n📊 **Уровень:** {p}\n"
-        f"❤️ **HP:** {p}/{p}\n🧪 **MP:** {p}/{p}\n💰 **Золото:** {p}\n🎒 **Инвентарь:** {p}"
+        f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
+        f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
     )
     bot.reply_to(message, status_text, parse_mode='Markdown')
 
@@ -120,23 +121,22 @@ def handle_game_action(message):
         conn.close()
         return
     
-    world_id = player
+    world_id = player[2]
     cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-    players_info = "\n".join([f"- {p} (Ур. {p}, HP: {p}, Локация: {p})" for p in cursor.fetchall()])
+    players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, Локация: {p[3]})" for p in cursor.fetchall()])
     cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-    world_history = "\n".join([l for l in reversed(cursor.fetchall())])
+    world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
     system_prompt = (
         f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
-        f"Ходит: {player} (Ур {player}, HP: {player}/{player}, MP: {player}/{player}, Золото: {player}, Инв: {player}, Лок: {player}).\nДействие: \"{action}\"\n"
+        f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\nДействие: \"{action}\"\n"
         "Опиши художественно последствия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
-        f"UPDATE_DATA: {{\"level\": {player}, \"hp\": {player}, \"mp\": {player}, \"gold\": {player}, \"inventory\": \"{player}\", \"location\": \"{player}\"}}\n"
+        f"UPDATE_DATA: {{\"level\": {player[3]}, \"hp\": {player[4]}, \"mp\": {player[6]}, \"gold\": {player[8]}, \"inventory\": \"{player[9]}\", \"location\": \"{player[10]}\"}}\n"
         "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
     )
 
     try:
-        # Авторизованный запрос к Hugging Face Inference API с токеном
         headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
         payload = {
             "inputs": f"<|system|>\n{system_prompt}\n<|user|>\n{action}\n<|assistant|>\n",
@@ -167,11 +167,12 @@ def handle_game_action(message):
                 cursor = conn.cursor()
                 cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
                                (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
-                cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {player}: {action}"))
+                cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {player[1]}: {action}"))
                 conn.commit()
                 conn.close()
             except Exception as e:
                 print("Ошибка БД:", e)
+        
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
         bot.send_message(message.chat.id, f"📴 Не удалось связаться с сервером ИИ. Повторите попытку.")
