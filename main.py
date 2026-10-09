@@ -158,7 +158,7 @@ def handle_game_action(message):
     )
 
     try:
-        # ИСПРАВЛЕНО: Официальный вызов библиотеки openai через объекты
+        # ИСПРАВЛЕНО: Добавлен корректный вызов элемента списка [0] для извлечения контента
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": system_prompt}]
