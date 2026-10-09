@@ -6,12 +6,13 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА
+# ВАШ ТЕКУЩИЙ РАБОЧИЙ КЛЮЧ OPENROUTER
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = "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"
 # =====================================================================
 
-MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
+# Заменили модель на более стабильную и быструю
+MODEL_NAME = "google/gemini-2.5-flash:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -68,7 +69,6 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ИСПРАВЛЕНО: Теперь берем элементы по индексам [1] и, а не применяем .strip() к списку
         world_id = parts[1].strip().lower()
         world_name = parts[2].strip()
         user_id = message.from_user.id
@@ -159,7 +159,6 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в мире."
         )
 
-        # ИСПРАВЛЕНО: Указаны корректные публичные заголовки для верификации бесплатных моделей на OpenRouter
         headers = {
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "Content-Type": "application/json",
@@ -172,13 +171,13 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
+        # ТОЧНЫЙ АДРЕС API ДЛЯ ЗАПРОСОВ К МОДЕЛЯМ
         api_url = "https://openrouter.ai"
         response = requests.post(api_url, headers=headers, json=data, timeout=30)
         
         try:
             response_json = response.json()
         except Exception:
-            # Продвинутая отладка: если Vercel все равно вернет HTML, мы очистим его от лишних тегов для читаемости
             clean_text = response.text.replace("<html>", "").replace("<body>", "").strip()[:200]
             bot.reply_to(message, f"❌ Защита шлюза отклонила запрос.\nСтатус: {response.status_code}\nОтвет: {clean_text}")
             return
