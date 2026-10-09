@@ -126,7 +126,6 @@ def handle_game_action(message):
         conn.close()
         return
     
-    # Жесткое извлечение строковых типов данных без каши в массивах
     world_id = str(player[2])
     p_name = str(player[1])
     p_lvl = str(player[3])
@@ -144,7 +143,6 @@ def handle_game_action(message):
     world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
     conn.close()
 
-    # ИСПРАВЛЕНО: JSON-структура полностью изолирована от f-строки промпта
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
@@ -168,13 +166,25 @@ def handle_game_action(message):
         if response.status_code != 200:
             bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
             return
-            
-        if not response.text or response.text.strip() == "":
-            bot.send_message(message.chat.id, "❌ Сервер ИИ прислал пустой ответ. Перезапустите деплой.")
-            return
 
         response_json = response.json()
-        ai_reply = response_json['choices'][0]['message']['content']
+        
+        # УНИВЕРСАЛЬНЫЙ СИНТАКСИЧЕСКИЙ ПАРСЕР ОТВЕТА ОТ ЛЮБЫХ ВЕРСИЙ API
+        ai_reply = ""
+        if 'choices' in response_json:
+            choices = response_json['choices']
+            if isinstance(choices, list) and len(choices) > 0:
+                choice = choices[0]
+                if 'message' in choice and 'content' in choice['message']:
+                    ai_reply = choice['message']['content']
+                elif 'text' in choice:
+                    ai_reply = choice['text']
+            elif isinstance(choices, dict) and 'message' in choices:
+                ai_reply = choices['message']['content']
+        
+        if not ai_reply:
+            ai_reply = str(response_json)
+
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
