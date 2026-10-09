@@ -59,14 +59,15 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        parts = message.text.strip().split(None, 2)
+            world_id = str(parts[1]).strip().lower()
+        world_name = str(parts[2]).strip()
         if len(parts) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # СУПЕРФИКС: Берем элементы списка по индексам и очищаем их как отдельные строки
-        world_id = str(parts[1]).strip().lower()
-        world_name = str(parts[2]).strip()
+        # ЖЕЛЕЗОБЕТОННЫЙ СИНТАКСИЧЕСКИЙ ФИКС: работаем со строками внутри списка, а не со всем массивом
+        world_id = parts[1].strip().lower()
+        world_name = parts[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
@@ -129,7 +130,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Извлекаем строковые значения по точным номерам колонок кортежа SQLite
+        # Получаем очищенные текстовые значения из кортежа SQLite строго по их реальным индексам (0-10)
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -142,7 +143,7 @@ def handle_game_action(message):
         p_loc = str(player[10])
 
         cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-        players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, {p[3]})" for p in cursor.fetchall()])
+        players_info = "\n".join([f"- {row[0]} (Ур. {row[1]}, HP: {row[2]}, {row[3]})" for row in cursor.fetchall()])
         
         cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
         world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
