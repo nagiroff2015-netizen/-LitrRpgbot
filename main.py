@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# БЕЗОПАСНОСТЬ: Ключи загружаются из настроек Render (Environment)
+# НАСТРОЙКИ БЕЗОПАСНОСТИ: Ключи берутся из Environment хостинга Render
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY") 
 # =====================================================================
@@ -19,7 +19,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно работает через Webhook!"
+    return "ЛитРПГ Бот успешно запущен и работает!"
 
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
@@ -59,23 +59,35 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        text = message.text.strip()
-        parts = text.split(None, 2)
+        # ПОЛНЫЙ ОТКАЗ ОТ ИСПОЛЬЗОВАНИЯ СПИСКОВ И МЕТОДА SPLIT():
+        text_raw = message.text.strip()
         
-        if len(parts) < 3:
+        # Находим первый пробел после /join
+        first_space = text_raw.find(' ')
+        if first_space == -1:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
+            
+        # Отрезаем саму команду, оставляя только "mir1 Асгард"
+        clean_args = text_raw[first_space:].strip()
         
-        # ЖЕЛЕЗОБЕТОННЫЙ СИНТАКСИЧЕСКИЙ ФИКС СТРОК 61 И 62:
-        world_id = str(parts[1]).strip().lower()
-        world_name = str(parts[2]).strip()
+        # Находим пробел между ID мира и Названием мира
+        next_space = clean_args.find(' ')
+        if next_space == -1:
+            bot.reply_to(message, "⚠️ Пропущен пробел. Пример: `/join mir1 Асгард`")
+            return
+            
+        # Извлекаем чистые изолированные строки БЕЗ кавычек и квадратных скобок массивов
+        world_id = clean_args[:next_space].strip().lower()
+        world_name = clean_args[next_space:].strip()
+        
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Полностью очищаем старые багнутые профили
+        # Полностью стираем старые забагованные данные пользователя
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -89,9 +101,10 @@ def join_world(message):
         ''', (user_id, username, world_id))
         conn.commit()
         conn.close()
+        
         bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка регистрации мира: {str(e)}")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -104,7 +117,7 @@ def show_status(message):
         conn.close()
         
         if not p:
-            bot.reply_to(message, "❌ Используйте /join")
+            bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
             return
             
         status_text = (
@@ -113,7 +126,7 @@ def show_status(message):
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка статуса: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка вывода статов: {str(e)}")
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -131,7 +144,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Безопасное извлечение строковых значений по точным индексам колонок (0-10)
+        # Абсолютно точная распаковка ячеек кортежа SQLite3 (от 0 до 10)
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -193,12 +206,12 @@ def handle_game_action(message):
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
-            except Exception as e:
-                print("Ошибка БД:", e)
+            except Exception as db_err:
+                print("Ошибка обновления БД:", db_err)
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Ошибка: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Подробности: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
