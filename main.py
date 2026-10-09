@@ -15,18 +15,22 @@ MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
-# Безопасная фабрика для перевода ответов SQLite в словари
-def dict_factory(cursor, row):
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col] = row[idx]
-    return d
+# Специальный класс, преобразующий строки БД в удобные объекты.
+# Теперь можно писать player.world_id вместо player['world_id'] или player[2]
+class RowObject:
+    def __init__(self, cursor, row):
+        for idx, col in enumerate(cursor.description):
+            setattr(self, col[0], row[idx])
+
+def get_db_connection():
+    conn = sqlite3.connect('litrpg_game.db')
+    conn.row_factory = RowObject  # Подключаем ко всем операциям
+    return conn
 
 @app.route('/')
 def home():
     return "ЛитРПГ Бот успешно работает через стабильный шлюз!"
 
-# ИСПРАВЛЕНО: Добавлен метод GET для исключения ошибок 405 при проверках Render
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
     if request.method == 'POST':
@@ -39,6 +43,11 @@ def get_message():
 def init_db():
     conn = sqlite3.connect('litrpg_game.db')
     cursor = conn.cursor()
+    # Удаляем старые забагованные таблицы, чтобы структура пересоздалась с нуля
+    cursor.execute('DROP TABLE IF EXISTS worlds')
+    cursor.execute('DROP TABLE IF EXISTS players')
+    cursor.execute('DROP TABLE IF EXISTS logs')
+    
     cursor.execute('CREATE TABLE IF NOT EXISTS worlds (world_id TEXT PRIMARY KEY, name TEXT, lore TEXT)')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS players (
@@ -76,7 +85,7 @@ def join_world(message):
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
-        conn = sqlite3.connect('litrpg_game.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
@@ -100,8 +109,7 @@ def join_world(message):
 def show_status(message):
     try:
         user_id = message.from_user.id
-        conn = sqlite3.connect('litrpg_game.db')
-        conn.row_factory = dict_factory
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
         p = cursor.fetchone()
@@ -112,8 +120,8 @@ def show_status(message):
             return
             
         status_text = (
-            f"👤 **Игрок:** {p['username']}\n📍 **Локация:** {p['location']}\n📊 **Уровень:** {p['level']}\n"
-            f"❤️ **HP:** {p['hp']}/{p['max_hp']}\n🧪 **MP:** {p['mp']}/{p['max_mp']}\n💰 **Золото:** {p['gold']}\n🎒 **Инвентарь:** {p['inventory']}"
+            f"👤 **Игрок:** {p.username}\n📍 **Локация:** {p.location}\n📊 **Уровень:** {p.level}\n"
+            f"❤️ **HP:** {p.hp}/{p.max_hp}\n🧪 **MP:** {p.mp}/{p.max_mp}\n💰 **Золото:** {p.gold}\n🎒 **Инвентарь:** {p.inventory}"
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
@@ -125,8 +133,7 @@ def handle_game_action(message):
         user_id = message.from_user.id
         action = message.text
         
-        conn = sqlite3.connect('litrpg_game.db')
-        conn.row_factory = dict_factory
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
         player = cursor.fetchone()
@@ -136,23 +143,22 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # ИСПРАВЛЕНО: Безопасное чтение по строковым ключам словаря (защита от багов Markdown)
-        world_id = str(player['world_id'])
-        p_name = str(player['username'])
-        p_lvl = str(player['level'])
-        p_hp = str(player['hp'])
-        p_max_hp = str(player['max_hp'])
-        p_mp = str(player['mp'])
-        p_max_mp = str(player['max_mp'])
-        p_gold = str(player['gold'])
-        p_inv = str(player['inventory'])
-        p_loc = str(player['location'])
+        world_id = str(player.world_id)
+        p_name = str(player.username)
+        p_lvl = str(player.level)
+        p_hp = str(player.hp)
+        p_max_hp = str(player.max_hp)
+        p_mp = str(player.mp)
+        p_max_mp = str(player.max_mp)
+        p_gold = str(player.gold)
+        p_inv = str(player.inventory)
+        p_loc = str(player.location)
 
         cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-        players_info = "\n".join([f"- {row['username']} (Ур. {row['level']}, HP: {row['hp']}, {row['location']})" for row in cursor.fetchall()])
+        players_info = "\n".join([f"- {row.username} (Ур. {row.level}, HP: {row.hp}, {row.location})" for row in cursor.fetchall()])
         
         cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-        world_history = "\n".join([str(l['entry']) for l in reversed(cursor.fetchall())])
+        world_history = "\n".join([str(l.entry) for l in reversed(cursor.fetchall())])
         conn.close()
 
         system_prompt = (
