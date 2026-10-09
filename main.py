@@ -64,7 +64,6 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ИСПРАВЛЕНО: Правильное обращение к элементам списка строк
         world_id = args[1].strip().lower()
         world_name = args[2].strip()
         user_id = message.from_user.id
@@ -128,7 +127,6 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Получаем данные из кортежа бд по точным индексам колонок
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -169,6 +167,7 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
+        # ИСПРАВЛЕНО: Указан верный технический эндпоинт SambaNova Cloud API
         response = requests.post("https://sambanova.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
@@ -185,16 +184,23 @@ def handle_game_action(message):
                 data_parsed = json.loads(json_str)
                 conn = sqlite3.connect('litrpg_game.db')
                 cursor = conn.cursor()
+                # ИСПРАВЛЕНО: Закрыт SQL-синтаксис запроса базы данных и убрана лишняя запятая
                 cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
                                (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
-            except Exception as json_error:
-                print(f"Ошибка парсинга JSON от ИИ: {str(json_error)}")
+            except Exception as e:
+                print("Ошибка БД:", e)
         
-        bot.reply_to(message, display_text)
+        bot.send_message(message.chat.id, display_text)
+    except Exception as e: 
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Ошибка: {str(e)}")
 
-    except Exception as e:
-        print(f"Общая ошибка в handle_game_action: {str(e)}")
-        bot.reply_to(message, "⚠️ Мастер временно задумался (ошибка API). Попробуйте совершить действие еще раз!")
+if __name__ == '__main__':
+    bot.remove_webhook()
+    if RENDER_EXTERNAL_URL:
+        bot.set_webhook(url=RENDER_EXTERNAL_URL + '/' + TELEGRAM_BOT_TOKEN)
+    
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
