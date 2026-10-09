@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# НАСТРОЙКИ БЕЗОПАСНОСТИ КЛЮЧЕЙ (Render подтягивает из Environment)
+# КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ ИЗ НАСТРОЕК RENDER (Environment)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY") 
 # =====================================================================
@@ -19,7 +19,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно запущен и работает!"
+    return "ЛитРПГ Бот успешно работает через Webhook!"
 
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
@@ -59,29 +59,27 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        # Успешная симуляция №1: Чёткое деление текста без создания багнутых списков
-        msg_text = message.text.strip()
-        parts = msg_text.split(None, 2)
-        
+        parts = message.text.strip().split(None, 2)
         if len(parts) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        world_id = str(parts[1]).strip().lower()
-        world_name = str(parts[2]).strip()
+        # ТОЧНЫЙ ФИКС: Извлекаем элементы как чистые строки из индексов массива
+        world_id = parts[1].strip().lower()
+        world_name = parts[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Симуляция №2: Гарантированная очистка старых забагованных ячеек
+        # Полностью очищаем старые записи
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
         if not cursor.fetchone():
             cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, "Мир " + world_name))
-            cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"Мир {world_name} успешно создан."))
+            cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, "Мир " + world_name + " создан."))
 
         cursor.execute('''
             INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
@@ -89,10 +87,9 @@ def join_world(message):
         ''', (user_id, username, world_id))
         conn.commit()
         conn.close()
-        
         bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка регистрации: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -105,17 +102,16 @@ def show_status(message):
         conn.close()
         
         if not p:
-            bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
+            bot.reply_to(message, "❌ Используйте /join")
             return
             
-        # Симуляция №3: Построчный вывод статов игрока без скобок массивов
         status_text = (
             f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
             f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка вывода статуса: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка статуса: {str(e)}")
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -129,11 +125,11 @@ def handle_game_action(message):
         player = cursor.fetchone()
         
         if not player:
-            bot.reply_to(message, "❌ Сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
+            bot.reply_to(message, "❌ Пожалуйста, сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
             conn.close()
             return
         
-        # Симуляция №4: Идеальное сопоставление ячеек SQLite3 (0-10) в переменные
+        # Получаем очищенные текстовые значения из кортежа SQLite
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -146,13 +142,12 @@ def handle_game_action(message):
         p_loc = str(player[10])
 
         cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-        players_info = "\n".join([f"- {row[0]} (Ур. {row[1]}, HP: {row[2]}, {row[3]})" for row in cursor.fetchall()])
+        players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, {p[3]})" for p in cursor.fetchall()])
         
         cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-        world_history = "\n".join([str(row[0]) for row in reversed(cursor.fetchall())])
+        world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
         conn.close()
 
-        # Изолированный промпт для стабильной обработки ИИ
         system_prompt = (
             "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
             "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
@@ -181,7 +176,6 @@ def handle_game_action(message):
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
-        # Симуляция №5: Безопасный разбор системных изменений параметров
         if "UPDATE_DATA:" in ai_reply:
             try:
                 start_idx = ai_reply.find("{")
@@ -197,12 +191,12 @@ def handle_game_action(message):
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
-            except Exception as db_err:
-                print("Ошибка обновления БД:", db_err)
+            except Exception as e:
+                print("Ошибка БД:", e)
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Ошибка обработки мира. Повторите попытку. Подробности: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Ошибка: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
