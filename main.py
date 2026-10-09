@@ -47,22 +47,22 @@ def init_db():
 
 init_db()
 
-# Новая функция запроса к свободному ИИ без использования внешних токенов
+# ИСПРАВЛЕНО: Запрос переведен на стабильный метод GET с кодированием текста
 def ask_free_rpg_ai(system_prompt, user_action):
     try:
-        url = "https://pollinations.ai"
-        payload = {
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_action}
-            ],
-            "model": "openai",
-            "jsonMode": False
-        }
-        res = requests.post(url, json=payload, timeout=25)
+        # Соединяем системный лор и действие в один текст для ИИ
+        full_text = f"{system_prompt}\n\nДействие игрока: {user_action}"
+        
+        # Безопасно кодируем текст для передачи в URL (заменяем пробелы и спецсимволы)
+        encoded_prompt = requests.utils.quote(full_text)
+        
+        # Отправляем GET-запрос на специальный текстовый эндпоинт
+        url = f"https://pollinations.ai{encoded_prompt}?model=openai"
+        
+        res = requests.get(url, timeout=25)
         
         if res.status_code != 200:
-            return f"ERROR: Сервер ИИ временно занят (Код {res.status_code}). Попробуйте еще раз!"
+            return f"ERROR: Сервер шлюза ИИ вернул код {res.status_code}."
             
         return res.text.strip()
     except Exception as e:
