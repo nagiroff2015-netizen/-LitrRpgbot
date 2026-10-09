@@ -6,12 +6,14 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
+# ВАШ ТОКЕН ТЕЛЕГРАМ АВТОМАТИЧЕСКИ ПОДТЯГИВАЕТСЯ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-SAMBANOVA_API_KEY = "3cb477c6-85c4-4392-bd94-f3df9c74911b"
+# ЖЕСТКО ВШИТЫЙ БЕСПЛАТНЫЙ РАБОЧИЙ КЛЮЧ ДЛЯ СЕРВЕРА HUGGING FACE
+HF_TOKEN = "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"
 # =====================================================================
 
-MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
+API_URL = "https://huggingface.co"
+
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -19,7 +21,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно работает на SambaNova!"
+    return "ЛитРПГ Бот успешно работает через Webhook!"
 
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
@@ -48,10 +50,10 @@ init_db()
 def send_welcome(message):
     welcome_text = (
         "⚔️ **Добро пожаловать в многопользовательскую ЛитРПГ песочницу!** ⚔️\n\n"
-        "Вы можете играть в одном мире с друзьями независимо с разных устройств!\n\n"
+        "Вы можете играть в одном мире с друзьями со своих устройств независимо!\n\n"
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
-        "Пример: `/join mir1 Асгард`\n\n"
+        "Пример: `/join mir1 Асгард` (все, кто введут один ID, окажутся вместе)\n\n"
         "Команды:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
@@ -125,30 +127,31 @@ def handle_game_action(message):
     conn.close()
 
     system_prompt = (
-        f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория последних событий:\n{world_history}\n"
+        f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
         f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\n"
-        "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
+        f"Действие: \"{action}\"\n"
+        "Опиши художественно последствия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-        "Изменяй значения в JSON в зависимости от происходящего в мире (получил опыт/урон, нашел золото, сменил локацию)."
+        "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
     )
 
     try:
-        headers = {
-            "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
-            "Content-Type": "application/json"
+        headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
+        payload = {
+            "inputs": f"<|system|>\n{system_prompt}\n<|user|>\n{action}\n<|assistant|>\n",
+            "parameters": {"max_new_tokens": 400, "return_full_text": False, "temperature": 0.6}
         }
-        # ФИКС: Передаем данные в строгом многоролевом формате API SambaNova
-        data = {
-            "model": MODEL_NAME,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": action}
-            ],
-            "temperature": 0.7
-        }
-        response = requests.post("https://sambanova.ai", headers=headers, json=data)
+        
+        response = requests.post(API_URL, json=payload, headers=headers)
         response_json = response.json()
-        ai_reply = response_json['choices'][0]['message']['content']
+        
+        if isinstance(response_json, list) and len(response_json) > 0:
+            ai_reply = response_json[0].get('generated_text', '')
+        elif isinstance(response_json, dict) and 'generated_text' in response_json:
+            ai_reply = response_json['generated_text']
+        else:
+            ai_reply = "📴 Сервер ИИ подготавливает модель мира. Пожалуйста, повторите действие через 10 секунд."
+
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -168,9 +171,10 @@ def handle_game_action(message):
                 conn.close()
             except Exception as e:
                 print("Ошибка БД:", e)
+        
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите действие.")
+        bot.send_message(message.chat.id, f"📴 Сбой обработки мира. Повторите попытку.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
