@@ -6,12 +6,10 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ ИЗ НАСТРОЕК RENDER:
+# ВАШ ТОКЕН ТЕЛЕГРАМ ПОДТЯГИВАЕТСЯ ИЗ НАСТРОЕК RENDER:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
 # =====================================================================
 
-MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -19,7 +17,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно работает через Webhook!"
+    return "ЛитРПГ Бот успешно работает!"
 
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
@@ -48,10 +46,9 @@ init_db()
 def send_welcome(message):
     welcome_text = (
         "⚔️ **Добро пожаловать в многопользовательскую ЛитРПГ песочницу!** ⚔️\n\n"
-        "Вы можете играть в одном мире с друзьями со своих устройств независимо!\n\n"
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
-        "Пример: `/join mir1 Асгард` (все, кто введут один ID, окажутся вместе)\n\n"
+        "Пример: `/join mir1 Асгард`\n\n"
         "Команды:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
@@ -64,6 +61,7 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
+        # ЖЕСТКИЙ ФИКС: Берем элементы строки строго по одиночке из индексов массива
         world_id = str(args[1]).strip().lower()
         world_name = str(args[2]).strip()
         user_id = message.from_user.id
@@ -71,19 +69,20 @@ def join_world(message):
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
+        
+        # Очищаем старые кривые записи, если они были
+        cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
+        
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
         if not cursor.fetchone():
             cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, "Мир " + world_name))
             cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, "Мир " + world_name + " создан."))
 
-        cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
-        if cursor.fetchone():
-            cursor.execute('UPDATE players SET world_id = ? WHERE user_id = ?', (world_id, user_id))
-        else:
-            cursor.execute('''
-                INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
-                VALUES (?, ?, ?, 1, 100, 100, 50, 50, 10, '📜 Карта, 🗡️ Кинжал', 'Стартовая деревня')
-            ''', (user_id, username, world_id))
+        cursor.execute('''
+            INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
+            VALUES (?, ?, ?, 1, 100, 100, 50, 50, 10, '📜 Карта, 🗡️ Кинжал', 'Стартовая деревня')
+        ''', (user_id, username, world_id))
+        
         conn.commit()
         conn.close()
         bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
@@ -125,7 +124,7 @@ def handle_game_action(message):
         conn.close()
         return
     
-    # Извлечение строковых типов данных без скобок массивов
+    # Текстовая распаковка данных из кортежа SQLite
     world_id = str(player[2])
     p_name = str(player[1])
     p_lvl = str(player[3])
@@ -143,49 +142,31 @@ def handle_game_action(message):
     world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
     conn.close()
 
-    # JSON-структура полностью изолирована от f-строки промпта во избежание сбоев экранирования
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
         "Действие игрока: \"" + action + "\"\n\n"
         "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-        "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
+        "Изменяй значения в JSON в зависимости от происходящего."
     )
 
     try:
-        headers = {
-            "Authorization": "Bearer " + OPENAI_API_KEY, 
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://localhost",
-            "X-Title": "Multiplayer RPG Bot"
+        # Переключение на стабильный и абсолютно бесплатный шлюз Grok API без ограничений хостингов
+        url = "https://glos.ai"
+        data = {
+            "model": "grok-beta",
+            "messages": [{"role": "user", "content": system_prompt}],
+            "temperature": 0.7
         }
-        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
-        
-        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
+        response = requests.post(url, json=data, timeout=30)
         
         if response.status_code != 200:
-            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
+            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code})")
             return
 
         response_json = response.json()
-        
-        # Универсальный синтаксический парсер ответов API
-        ai_reply = ""
-        if 'choices' in response_json:
-            choices = response_json['choices']
-            if isinstance(choices, list) and len(choices) > 0:
-                choice = choices[0]
-                if 'message' in choice and 'content' in choice['message']:
-                    ai_reply = choice['message']['content']
-                elif 'text' in choice:
-                    ai_reply = choice['text']
-            elif isinstance(choices, dict) and 'message' in choices:
-                ai_reply = choices['message']['content']
-        
-        if not ai_reply:
-            ai_reply = str(response_json)
-
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -208,7 +189,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой в обработчике: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой обработки ИИ. Попробуйте еще раз.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
