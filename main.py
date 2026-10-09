@@ -3,27 +3,18 @@ import json
 import sqlite3
 import telebot
 import requests
-from openai import OpenAI
+from threading import Thread
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
+# ВСТАВЛЕН СВЕЖИЙ РАБОЧИЙ КЛЮЧ НЕЙРОСЕТИ С ЛИМИТАМИ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "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"
 # =====================================================================
 
 MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
-
-# Подключение к OpenRouter через официальную библиотеку
-client = OpenAI(
-    base_url="https://openrouter.ai",
-    api_key=OPENAI_API_KEY,
-    default_headers={
-        "X-Title": "Multiplayer RPG Bot",
-    }
-)
 
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
@@ -74,7 +65,6 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ФИКС: Корректно извлекаем элементы по индексам из списка аргументов
         world_id = args[1].strip().lower()
         world_name = args[2].strip()
         user_id = message.from_user.id
@@ -163,7 +153,6 @@ def handle_game_action(message):
     )
 
     try:
-        # Прямой HTTP-запрос к OpenRouter для точной диагностики ответа
         headers = {
             "Authorization": "Bearer " + OPENAI_API_KEY, 
             "Content-Type": "application/json",
@@ -172,12 +161,16 @@ def handle_game_action(message):
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
-        response = requests.post("https://openrouter.ai/chat/completions", headers=headers, json=data, timeout=30)
+        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
         if response.status_code != 200:
             bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
             return
             
+        if not response.text or response.text.strip() == "":
+            bot.send_message(message.chat.id, "❌ Сервер ИИ прислал пустой ответ. Перезапустите деплой.")
+            return
+
         response_json = response.json()
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
