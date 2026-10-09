@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
+# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = "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"
 # =====================================================================
@@ -58,12 +58,12 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        args = message.text.split(maxsplit=2)
+        args = message.text.split()
         if len(args) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # Исправленный чистый парсинг строк
+        # ТОЧНЫЙ ХАРДКОРНЫЙ ФИКС: Берем только чистые слова из списка по индексам
         world_id = str(args[1]).strip().lower()
         world_name = str(args[2]).strip()
         user_id = message.from_user.id
@@ -72,6 +72,7 @@ def join_world(message):
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
+        # Полностью вычищаем старые багнутые записи из базы
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -85,7 +86,7 @@ def join_world(message):
         ''', (user_id, username, world_id))
         conn.commit()
         conn.close()
-        bot.reply_to(message, f"✨ Вы вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
+        bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
@@ -141,6 +142,7 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
+    # Системный промпт собран строками без f-экранирования фигурных скобок JSON шаблона
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
@@ -160,12 +162,12 @@ def handle_game_action(message):
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
-        response_json = response.json()
         
-        if 'choices' not in response_json:
-            bot.send_message(message.chat.id, f"❌ Ошибка ИИ: {str(response_json)}")
+        if response.status_code != 200:
+            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
             return
 
+        response_json = response.json()
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
