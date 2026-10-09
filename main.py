@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ ИЗ НАСТРОЕК RENDER (Environment)
+# БЕЗОПАСНОСТЬ: Ключи загружаются из настроек Render (Environment)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY") 
 # =====================================================================
@@ -64,7 +64,7 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ТОЧНЫЙ ФИКС: Извлекаем элементы как чистые строки из индексов массива
+        # СИНТАКСИЧЕСКИЙ ФИКС: Извлекаем элементы строки из индексов списка, а не из всего массива сразу
         world_id = parts[1].strip().lower()
         world_name = parts[2].strip()
         user_id = message.from_user.id
@@ -129,7 +129,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Получаем очищенные текстовые значения из кортежа SQLite
+        # СИНТАКСИЧЕСКИЙ ФИКС: Извлекаем текстовые значения по точным номерам колонок кортежа SQLite
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
