@@ -3,6 +3,7 @@ import json
 import sqlite3
 import telebot
 import requests
+from threading import Thread
 from flask import Flask, request
 
 # =====================================================================
@@ -117,13 +118,11 @@ def handle_game_action(message):
     cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
     player = cursor.fetchone()
     
-    # СТРОГАЯ ПРОВЕРКА: Если база обнулилась, просим игрока перезайти в мир
     if not player:
-        bot.reply_to(message, "❌ База данных была обновлена. Пожалуйста, заново подключитесь к миру командой:\n`/join мир1 Хаус`")
+        bot.reply_to(message, "❌ Пожалуйста, сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
         conn.close()
         return
     
-    # Безопасная распаковка данных
     world_id = player[2]
     p_name = player[1]
     p_lvl = player[3]
@@ -162,6 +161,7 @@ def handle_game_action(message):
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
+        # ФИКС: Чтение ответа ИИ из массива choices[0]
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
