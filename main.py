@@ -119,7 +119,7 @@ def handle_game_action(message):
     player = cursor.fetchone()
     
     if not player:
-        bot.reply_to(message, "❌ Пожалуйста, сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
+        bot.reply_to(message, "❌ Пожалуйста, сначала подключиться к миру командой:\n`/join мир1 Хаус`")
         conn.close()
         return
     
@@ -140,7 +140,6 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
-    # ФИКС: Фигурные скобки JSON изолированы от f-строки
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
@@ -160,7 +159,17 @@ def handle_game_action(message):
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
-        response_json = response.json()
+        
+        # ДИАГНОСТИКА: Проверяем статус ответа сервера
+        if response.status_code != 200:
+            bot.send_message(message.chat.id, f"❌ Ошибка сервера OpenRouter (Код {response.status_code}):\n{response.text[:200]}")
+            return
+            
+        try:
+            response_json = response.json()
+        except Exception:
+            bot.send_message(message.chat.id, f"❌ Ошибка разбора ответа. Сервер вернул текст вместо JSON:\n{response.text[:200]}")
+            return
         
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
@@ -185,7 +194,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой связи с ИИ: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой в коде: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
