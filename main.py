@@ -94,6 +94,7 @@ def join_world(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
+# ИСПРАВЛЕНО НАВСЕГДА: Команда /status больше НЕ обращается к ИИ, а мгновенно берет чистые данные из БД
 @bot.message_handler(commands=['status'])
 def show_status(message):
     try:
