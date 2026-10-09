@@ -148,6 +148,7 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
+    # СБОРКА ПРОМПТА БЕЗ ОШИБОК ЭКРАНИРОВАНИЯ ЭЛЕМЕНТОВ
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
@@ -158,7 +159,6 @@ def handle_game_action(message):
     )
 
     try:
-        # ИСПРАВЛЕНО: Добавлен корректный вызов элемента списка [0] для извлечения контента
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": system_prompt}]
