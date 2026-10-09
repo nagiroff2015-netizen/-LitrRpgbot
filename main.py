@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА (ЗАЩИТА ОТ ПУСТЫХ НАСТРОЕК RENDER)
+# БЕЗОПАСНОСТЬ: Ключи загружаются из настроек Render (Environment)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = "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"
 # =====================================================================
@@ -15,18 +15,26 @@ MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
-RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+# Безопасная фабрика для перевода ответов SQLite в словари
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col] = row[idx]
+    return d
 
 @app.route('/')
 def home():
     return "ЛитРПГ Бот успешно работает через стабильный шлюз!"
 
-@app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
+# ИСПРАВЛЕНО: Добавлен метод GET для исключения ошибок 405 при проверках Render
+@app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
-    json_string = request.get_data().decode('utf-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
-    return "!", 200
+    if request.method == 'POST':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return "!", 200
+    return "Webhook active", 200
 
 def init_db():
     conn = sqlite3.connect('litrpg_game.db')
@@ -51,7 +59,7 @@ def send_welcome(message):
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
         "Пример: `/join mir1 Асгард`\n\n"
-        "Команды:\n/status — Ваши характеристики\nЛюбой text — ваше действие!"
+        "Команды:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
@@ -93,8 +101,9 @@ def show_status(message):
     try:
         user_id = message.from_user.id
         conn = sqlite3.connect('litrpg_game.db')
+        conn.row_factory = dict_factory
         cursor = conn.cursor()
-        cursor.execute('SELECT user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location FROM players WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
         p = cursor.fetchone()
         conn.close()
         
@@ -103,8 +112,8 @@ def show_status(message):
             return
             
         status_text = (
-            f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
-            f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
+            f"👤 **Игрок:** {p['username']}\n📍 **Локация:** {p['location']}\n📊 **Уровень:** {p['level']}\n"
+            f"❤️ **HP:** {p['hp']}/{p['max_hp']}\n🧪 **MP:** {p['mp']}/{p['max_mp']}\n💰 **Золото:** {p['gold']}\n🎒 **Инвентарь:** {p['inventory']}"
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
@@ -117,8 +126,9 @@ def handle_game_action(message):
         action = message.text
         
         conn = sqlite3.connect('litrpg_game.db')
+        conn.row_factory = dict_factory
         cursor = conn.cursor()
-        cursor.execute('SELECT user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location FROM players WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
         player = cursor.fetchone()
         
         if not player:
@@ -126,22 +136,23 @@ def handle_game_action(message):
             conn.close()
             return
         
-        world_id = str(player[2])
-        p_name = str(player[1])
-        p_lvl = str(player[3])
-        p_hp = str(player[4])
-        p_max_hp = str(player[5])
-        p_mp = str(player[6])
-        p_max_mp = str(player[7])
-        p_gold = str(player[8])
-        p_inv = str(player[9])
-        p_loc = str(player[10])
+        # ИСПРАВЛЕНО: Безопасное чтение по строковым ключам словаря (защита от багов Markdown)
+        world_id = str(player['world_id'])
+        p_name = str(player['username'])
+        p_lvl = str(player['level'])
+        p_hp = str(player['hp'])
+        p_max_hp = str(player['max_hp'])
+        p_mp = str(player['mp'])
+        p_max_mp = str(player['max_mp'])
+        p_gold = str(player['gold'])
+        p_inv = str(player['inventory'])
+        p_loc = str(player['location'])
 
         cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-        players_info = "\n".join([f"- {row[0]} (Ур. {row[1]}, HP: {row[2]}, {row[3]})" for row in cursor.fetchall()])
+        players_info = "\n".join([f"- {row['username']} (Ур. {row['level']}, HP: {row['hp']}, {row['location']})" for row in cursor.fetchall()])
         
         cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-        world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
+        world_history = "\n".join([str(l['entry']) for l in reversed(cursor.fetchall())])
         conn.close()
 
         system_prompt = (
@@ -165,7 +176,6 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
-        # ИСПРАВЛЕНО: Указан правильный конечный адрес для вызова моделей через OpenRouter
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
         if response.status_code != 200:
@@ -185,7 +195,6 @@ def handle_game_action(message):
                 
                 data_parsed = json.loads(json_str)
                 
-                # ИСПРАВЛЕНО: Восстановлен оборванный в конце блок записи в базу данных
                 conn = sqlite3.connect('litrpg_game.db')
                 cursor = conn.cursor()
                 cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
