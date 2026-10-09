@@ -6,12 +6,12 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# НАСТРОЙКИ БЕЗОПАСНОСТИ: Ключи берутся из Environment хостинга Render
+# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА (ЗАЩИТА ОТ ПУСТЫХ НАСТРОЕК RENDER)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY") 
+OPENAI_API_KEY = "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"
 # =====================================================================
 
-MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
+MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -19,7 +19,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот успешно запущен и работает!"
+    return "ЛитРПГ Бот успешно работает через стабильный шлюз!"
 
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
@@ -48,46 +48,31 @@ init_db()
 def send_welcome(message):
     welcome_text = (
         "⚔️ **Добро пожаловать в многопользовательскую ЛитРПГ песочницу!** ⚔️\n\n"
-        "Вы можете играть в одном мире с друзьями со своих устройств независимо!\n\n"
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
         "Пример: `/join mir1 Асгард`\n\n"
-        "Команды:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
+        "Команды:\n/status — Ваши характеристики\nЛюбой text — ваше действие!"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-        # ПОЛНЫЙ ОТКАЗ ОТ ИСПОЛЬЗОВАНИЯ СПИСКОВ И МЕТОДА SPLIT():
-        text_raw = message.text.strip()
-        
-        # Находим первый пробел после /join
-        first_space = text_raw.find(' ')
-        if first_space == -1:
+        parts = message.text.strip().split(None, 2)
+        if len(parts) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
-            
-        # Отрезаем саму команду, оставляя только "mir1 Асгард"
-        clean_args = text_raw[first_space:].strip()
         
-        # Находим пробел между ID мира и Названием мира
-        next_space = clean_args.find(' ')
-        if next_space == -1:
-            bot.reply_to(message, "⚠️ Пропущен пробел. Пример: `/join mir1 Асгард`")
-            return
-            
-        # Извлекаем чистые изолированные строки БЕЗ кавычек и квадратных скобок массивов
-        world_id = clean_args[:next_space].strip().lower()
-        world_name = clean_args[next_space:].strip()
-        
+        # ИСПРАВЛЕНО НАВСЕГДА: Извлекаем чистые строки по индексам из списка аргументов
+        world_id = parts[1].strip().lower()
+        world_name = parts[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Полностью стираем старые забагованные данные пользователя
+        # Полностью очищаем старые забагованные записи
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -101,10 +86,9 @@ def join_world(message):
         ''', (user_id, username, world_id))
         conn.commit()
         conn.close()
-        
         bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка регистрации мира: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -117,7 +101,7 @@ def show_status(message):
         conn.close()
         
         if not p:
-            bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
+            bot.reply_to(message, "❌ Используйте /join")
             return
             
         status_text = (
@@ -126,7 +110,7 @@ def show_status(message):
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка вывода статов: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка статуса: {str(e)}")
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -144,7 +128,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Абсолютно точная распаковка ячеек кортежа SQLite3 (от 0 до 10)
+        # Получаем очищенные текстовые значения из кортежа SQLite строго по их реальным индексам
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -173,19 +157,19 @@ def handle_game_action(message):
         )
 
         headers = {
-            "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://localhost",
+            "X-Title": "Multiplayer RPG Bot"
         }
         data = {
             "model": MODEL_NAME,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": action}
-            ],
+            "messages": [{"role": "user", "content": system_prompt}],
             "temperature": 0.7
         }
         
-        response = requests.post("https://sambanova.ai", headers=headers, json=data, timeout=30)
+        # ИСПРАВЛЕНО НАВСЕГДА: Запрос уходит на стабильный, неблокируемый шлюз OpenRouter API
+        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
         ai_reply = response_json['choices'][0]['message']['content']
@@ -206,12 +190,12 @@ def handle_game_action(message):
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
-            except Exception as db_err:
-                print("Ошибка обновления БД:", db_err)
+            except Exception as e:
+                print("Ошибка БД:", e)
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Подробности: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Ошибка: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
