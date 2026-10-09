@@ -92,7 +92,6 @@ def ask_duckduckgo_ai(system_prompt, user_action):
         return text_response.strip()
     except Exception as e:
         return f"ERROR: Сбой сети ИИ-шлюза: {str(e)}"
-
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -232,3 +231,8 @@ def handle_game_action(message):
         bot.reply_to(message, display_text)
 
     except Exception as e:
+        print(f"Общая ошибка: {str(e)}")
+        bot.reply_to(message, f"⚠️ Не удалось обработать действие.\nОшибка: {str(e)}")
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
