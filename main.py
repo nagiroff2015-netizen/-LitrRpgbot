@@ -202,7 +202,6 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в мире."
         )
 
-        # Вызов стабильного ИИ
         ai_reply = ask_duckduckgo_ai(system_prompt, action)
 
         if ai_reply.startswith("ERROR:"):
