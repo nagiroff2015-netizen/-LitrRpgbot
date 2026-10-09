@@ -3,13 +3,12 @@ import json
 import sqlite3
 import telebot
 import requests
-from threading import Thread
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
+# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ ИЗ НАСТРОЕК RENDER:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "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"
 # =====================================================================
 
 MODEL_NAME = "google/gemini-2.5-flash"
@@ -126,6 +125,7 @@ def handle_game_action(message):
         conn.close()
         return
     
+    # Извлечение строковых типов данных без скобок массивов
     world_id = str(player[2])
     p_name = str(player[1])
     p_lvl = str(player[3])
@@ -143,6 +143,7 @@ def handle_game_action(message):
     world_history = "\n".join([str(l[0]) for l in reversed(cursor.fetchall())])
     conn.close()
 
+    # JSON-структура полностью изолирована от f-строки промпта во избежание сбоев экранирования
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
@@ -169,7 +170,7 @@ def handle_game_action(message):
 
         response_json = response.json()
         
-        # УНИВЕРСАЛЬНЫЙ СИНТАКСИЧЕСКИЙ ПАРСЕР ОТВЕТА ОТ ЛЮБЫХ ВЕРСИЙ API
+        # Универсальный синтаксический парсер ответов API
         ai_reply = ""
         if 'choices' in response_json:
             choices = response_json['choices']
