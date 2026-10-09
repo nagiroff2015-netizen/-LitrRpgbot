@@ -59,15 +59,16 @@ def send_welcome(message):
 @bot.message_handler(commands=['join'])
 def join_world(message):
     try:
-            world_id = str(parts[1]).strip().lower()
-        world_name = str(parts[2]).strip()
+        text = message.text.strip()
+        parts = text.split(None, 2)
+        
         if len(parts) < 3:
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ЖЕЛЕЗОБЕТОННЫЙ СИНТАКСИЧЕСКИЙ ФИКС: работаем со строками внутри списка, а не со всем массивом
-        world_id = parts[1].strip().lower()
-        world_name = parts[2].strip()
+        # ЖЕЛЕЗОБЕТОННЫЙ СИНТАКСИЧЕСКИЙ ФИКС СТРОК 61 И 62:
+        world_id = str(parts[1]).strip().lower()
+        world_name = str(parts[2]).strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
@@ -130,7 +131,7 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Получаем очищенные текстовые значения из кортежа SQLite строго по их реальным индексам (0-10)
+        # Безопасное извлечение строковых значений по точным индексам колонок (0-10)
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
