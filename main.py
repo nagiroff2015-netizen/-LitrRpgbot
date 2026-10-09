@@ -1,8 +1,8 @@
 import os
 import json
+import random
 import sqlite3
 import telebot
-import requests
 from flask import Flask, request
 
 # =====================================================================
@@ -20,7 +20,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот на сверхстабильном шлюзе ИИ запущен!"
+    return "ЛитРПГ Бот на встроенном игровом движке запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -47,26 +47,64 @@ def init_db():
 
 init_db()
 
-# ИСПРАВЛЕНО: Запрос переведен на стабильный метод GET с кодированием текста
-def ask_free_rpg_ai(system_prompt, user_action):
-    try:
-        # Соединяем системный лор и действие в один текст для ИИ
-        full_text = f"{system_prompt}\n\nДействие игрока: {user_action}"
+# Локальный игровой движок вместо ломающихся внешних ИИ
+def generate_game_response(p_name, p_loc, p_lvl, p_hp, p_mp, p_gold, p_inv, user_action):
+    # Наборы случайных художественных событий
+    encounters = [
+        "Вы встречаете бродячего торговца редкими эликсирами. Он предлагает вам сделку, но внезапно в кустах раздается шорох.",
+        "Перед вами раскинулись древние руины, покрытые светящимся мхом. Из темноты доносится эхо шагов.",
+        "Навстречу вам выскакивает свирепый Гоблин-Налётчик [Ур.2], размахивая ржавым тесаком!",
+        "Вы находите спрятанный под корнями старого дуба сундук, на котором мерцают магические руны.",
+        "Вы натыкаетесь на заброшенный лагерь авантюристов. Костер еще тлеет, а на земле видны следы спешного отступления."
+    ]
+    
+    outcomes = [
+        "Благодаря вашей бдительности, вы успешно справляетесь с угрозой! Враг повержен, а вы собираете трофеи.",
+        "Вы аккуратно исследуете окружение, избегая скрытых ловушек, и находите ценные ресурсы.",
+        "Внезапная вспышка магии отбрасывает вас назад! Вы теряете немного сил, но получаете крупицу опыта.",
+        "Ваше действие привлекает внимание местного духа-хранителя. Он одобряет вашу смелость и дарует благословение.",
+        "Происходит неожиданное: земля уходит из-под ног, и вы скатываетесь в скрытую подземную пещеру!"
+    ]
+    
+    # Случайным образом рассчитываем изменение характеристик
+    change_hp = random.randint(-15, 10)
+    change_gold = random.randint(2, 8)
+    change_mp = random.randint(-5, 5)
+    
+    new_hp = max(10, min(100, int(p_hp) + change_hp))
+    new_gold = max(0, int(p_gold) + change_gold)
+    new_mp = max(0, min(50, int(p_mp) + change_mp))
+    new_lvl = int(p_lvl)
+    
+    # Небольшой шанс поднять уровень
+    if random.random() > 0.8:
+        new_lvl += 1
+        level_up_msg = f"\n\n✨ **ВНИМАНИЕ: УРОВЕНЬ ПОВЫШЕН! Теперь вы {new_lvl} уровня!** ✨"
+    else:
+        level_up_msg = ""
         
-        # Безопасно кодируем текст для передачи в URL (заменяем пробелы и спецсимволы)
-        encoded_prompt = requests.utils.quote(full_text)
-        
-        # Отправляем GET-запрос на специальный текстовый эндпоинт
-        url = f"https://pollinations.ai{encoded_prompt}?model=openai"
-        
-        res = requests.get(url, timeout=25)
-        
-        if res.status_code != 200:
-            return f"ERROR: Сервер шлюза ИИ вернул код {res.status_code}."
-            
-        return res.text.strip()
-    except Exception as e:
-        return f"ERROR: Сбой шины данных: {str(e)}"
+    locations = ["Стартовая деревня", "Мрачный лес", "Древние руины", "Пещера гоблинов", "Торговый тракт"]
+    new_loc = random.choice(locations) if "идти" in user_action.lower() or "идти" in user_action.lower() else p_loc
+
+    story = (
+        f"📖 **Событие:** Вы решили: *\"{user_action}\"* в локации **{p_loc}**.\n\n"
+        f"🧭 {random.choice(encounters)}\n"
+        f"⚔️ {random.choice(outcomes)}"
+        f"{level_up_msg}\n\n"
+        f"📊 **Изменения:** HP: {change_hp:+} | Золото: {change_gold:+}💰"
+    )
+    
+    # Возвращаем художественный текст и готовый словарь для базы данных
+    db_data = {
+        "level": new_lvl,
+        "hp": new_hp,
+        "mp": new_mp,
+        "gold": new_gold,
+        "inventory": p_inv,
+        "location": new_loc
+    }
+    
+    return story, db_data
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -159,51 +197,21 @@ def handle_game_action(message):
         p_gold = str(player['gold'])
         p_inv = str(player['inventory'])
         p_loc = str(player['location'])
-
-        cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-        players_info = "\n".join([f"- {row['username']} (Ур. {row['level']}, HP: {row['hp']}, {row['location']})" for row in cursor.fetchall()])
-        
-        cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-        world_history = "\n".join([str(l['entry']) for l in reversed(cursor.fetchall())])
         conn.close()
 
-        system_prompt = (
-            "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
-            "Ходит: " + p_name + " (Ур " + p_lvl + ", HP: " + p_hp + "/" + p_max_hp + ", MP: " + p_mp + "/" + p_max_mp + ", Золото: " + p_gold + ", Инв: " + p_inv + ", Лок: " + p_loc + ").\n"
-            "Действие игрока: \"" + action + "\"\n\n"
-            "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
-            "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-            "Изменяй значения в JSON в зависимости от происходящего в мире."
-        )
+        # Генерируем ответ локально на сервере БЕЗ ЗАПРОСОВ К ИИ
+        display_text, data_parsed = generate_game_response(p_name, p_loc, p_lvl, p_hp, p_mp, p_gold, p_inv, action)
 
-        ai_reply = ask_free_rpg_ai(system_prompt, action)
-
-        if ai_reply.startswith("ERROR:"):
-            bot.reply_to(message, f"❌ Ошибка шлюза ИИ:\n{ai_reply}")
-            return
-
-        display_text = ai_reply
-
-        if "UPDATE_DATA:" in ai_reply:
-            try:
-                start_idx = ai_reply.find("{")
-                end_idx = ai_reply.rfind("}") + 1
-                json_str = ai_reply[start_idx:end_idx]
-                display_text = ai_reply[:ai_reply.find("UPDATE_DATA:")].strip()
-                
-                data_parsed = json.loads(json_str)
-                
-                conn = sqlite3.connect('litrpg_game.db')
-                cursor = conn.cursor()
-                cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
-                               (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
-                cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
-                conn.commit()
-                conn.close()
-            except Exception as json_error:
-                print(f"Ошибка парсинга JSON: {str(json_error)}")
+        # Обновляем базу данных
+        conn = sqlite3.connect('litrpg_game.db')
+        cursor = conn.cursor()
+        cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
+                       (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
+        cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
+        conn.commit()
+        conn.close()
         
-        bot.reply_to(message, display_text)
+        bot.reply_to(message, display_text, parse_mode='Markdown')
 
     except Exception as e:
         print(f"Общая ошибка: {str(e)}")
