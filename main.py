@@ -2,27 +2,18 @@ import os
 import json
 import sqlite3
 import telebot
-from openai import OpenAI
+import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
+# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = "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"
 # =====================================================================
 
-MODEL_NAME = "google/gemini-2.5-flash"
+MODEL_NAME = "meta-llama/llama-3-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
-
-# Подключение к OpenRouter через официальную библиотеку
-client = OpenAI(
-    base_url="https://openrouter.ai",
-    api_key=OPENAI_API_KEY,
-    default_headers={
-        "X-Title": "Multiplayer RPG Bot",
-    }
-)
 
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
@@ -57,10 +48,9 @@ init_db()
 def send_welcome(message):
     welcome_text = (
         "⚔️ **Добро пожаловать в многопользовательскую ЛитРПГ песочницу!** ⚔️\n\n"
-        "Вы можете играть в одном мире с друзьями со своих устройств независимо!\n\n"
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
-        "Пример: `/join mir1 Асгард` (все, кто введут один ID, окажутся вместе)\n\n"
+        "Пример: `/join mir1 Асгард`\n\n"
         "Команды:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
@@ -73,16 +63,15 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # СТРОГИЙ ИСПРАВЛЕННЫЙ ИНДЕКСНЫЙ ПАРСИНГ
-        world_id = args[1].strip().lower()
-        world_name = args[2].strip()
+        # Исправленный чистый парсинг строк
+        world_id = str(args[1]).strip().lower()
+        world_name = str(args[2]).strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Чистим старые забагованные скобки в БД
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -96,7 +85,7 @@ def join_world(message):
         ''', (user_id, username, world_id))
         conn.commit()
         conn.close()
-        bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
+        bot.reply_to(message, f"✨ Вы вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
@@ -110,7 +99,7 @@ def show_status(message):
         p = cursor.fetchone()
         conn.close()
         if not p:
-            bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
+            bot.reply_to(message, "❌ Используйте /join")
             return
         status_text = (
             f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
@@ -118,7 +107,7 @@ def show_status(message):
         )
         bot.reply_to(message, status_text, parse_mode='Markdown')
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка вывода статуса: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка статуса: {str(e)}")
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -135,7 +124,6 @@ def handle_game_action(message):
         conn.close()
         return
     
-    # Чистая распаковка ячеек базы данных без скобок массивов
     world_id = player[2]
     p_name = player[1]
     p_lvl = player[3]
@@ -159,16 +147,26 @@ def handle_game_action(message):
         f"Действие игрока: \"{action}\"\n\n"
         "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-        "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
+        "Изменяй значения в JSON в зависимости от происходящего в мире."
     )
 
     try:
-        # Официальный вызов библиотеки openai через объекты
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": system_prompt}]
-        )
-        ai_reply = response.choices[0].message.content
+        headers = {
+            "Authorization": "Bearer " + OPENAI_API_KEY, 
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://localhost",
+            "X-Title": "Multiplayer RPG Bot"
+        }
+        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
+        
+        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
+        response_json = response.json()
+        
+        if 'choices' not in response_json:
+            bot.send_message(message.chat.id, f"❌ Ошибка ИИ: {str(response_json)}")
+            return
+
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -191,7 +189,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой обработки: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
