@@ -3,17 +3,16 @@ import json
 import sqlite3
 import telebot
 import requests
+from threading import Thread
 from flask import Flask, request
 
 # =====================================================================
-# ВАШ ТОКЕН ТЕЛЕГРАМ АВТОМАТИЧЕСКИ ПОДТЯГИВАЕТСЯ:
+# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# ЖЕСТКО ВШИТЫЙ БЕСПЛАТНЫЙ РАБОЧИЙ КЛЮЧ ДЛЯ СЕРВЕРА HUGGING FACE
-HF_TOKEN = "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"
+OPENAI_API_KEY = "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"
 # =====================================================================
 
-API_URL = "https://huggingface.co"
-
+MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -74,8 +73,8 @@ def join_world(message):
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
     if not cursor.fetchone():
-        cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, f"Мир {world_name}"))
-        cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"Мир {world_name} создан."))
+        cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, "Мир " + world_name))
+        cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, "Мир " + world_name + " создан."))
 
     cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
     if cursor.fetchone():
@@ -87,7 +86,7 @@ def join_world(message):
         ''', (user_id, username, world_id))
     conn.commit()
     conn.close()
-    bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
+    bot.reply_to(message, "✨ Вы успешно вошли в мир **" + world_name + "**! Напишите любое действие, чтобы начать.")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -127,7 +126,7 @@ def handle_game_action(message):
     conn.close()
 
     system_prompt = (
-        f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
+        "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\n"
         f"Действие: \"{action}\"\n"
         "Опиши художественно последствия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
@@ -136,22 +135,17 @@ def handle_game_action(message):
     )
 
     try:
-        headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
-        payload = {
-            "inputs": f"<|system|>\n{system_prompt}\n<|user|>\n{action}\n<|assistant|>\n",
-            "parameters": {"max_new_tokens": 400, "return_full_text": False, "temperature": 0.6}
+        headers = {
+            "Authorization": "Bearer " + OPENAI_API_KEY, 
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://localhost",
+            "X-Title": "Multiplayer RPG Bot"
         }
-        
-        response = requests.post(API_URL, json=payload, headers=headers)
+        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
+        response = requests.post("https://openrouter.ai", headers=headers, json=data)
         response_json = response.json()
         
-        if isinstance(response_json, list) and len(response_json) > 0:
-            ai_reply = response_json[0].get('generated_text', '')
-        elif isinstance(response_json, dict) and 'generated_text' in response_json:
-            ai_reply = response_json['generated_text']
-        else:
-            ai_reply = "📴 Сервер ИИ подготавливает модель мира. Пожалуйста, повторите действие через 10 секунд."
-
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -174,7 +168,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой обработки мира. Повторите попытку.")
+        bot.send_message(message.chat.id, "📴 Ошибка обработки мира ИИ. Повторите попытку.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
