@@ -3,6 +3,8 @@ import json
 import sqlite3
 import telebot
 import requests
+from threading import Thread
+from flask import Flask
 
 # =====================================================================
 # ВАШИ ЖИВЫЕ КЛЮЧИ:
@@ -12,6 +14,16 @@ OPENAI_API_KEY = "sk-or-v1-77f7da0a7e148054767ecb2169c3dec58c90b5c6646e04404c31a
 
 MODEL_NAME = "meta-llama/llama-3-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+
+# Фейковый веб-сервер для прохождения проверки Render Free
+app = Flask('')
+@app.route('/')
+def home():
+    return "Бот активен и работает!"
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 def init_db():
     conn = sqlite3.connect('litrpg_game.db')
@@ -81,7 +93,7 @@ def show_status(message):
     if not p:
         bot.reply_to(message, "❌ Используйте /join")
         return
-    bot.reply_to(message, f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **🎒:** {p[9]}", parse_mode='Markdown')
+    bot.reply_to(message, f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -113,7 +125,7 @@ def handle_game_action(message):
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json", "X-Title": "RPG Bot"}
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         response = requests.post("https://openrouter.ai", headers=headers, json=data)
-        ai_reply = response.json()['choices'][0]['message']['content']
+        ai_reply = response.json()['choices']['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -132,4 +144,7 @@ def handle_game_action(message):
     except Exception as e: bot.reply_to(message, f"📴 Сбой ИИ: {str(e)}")
 
 if __name__ == '__main__':
+    # Запуск сервера и бота одновременно в разных потоках
+    server_thread = Thread(target=run_web_server)
+    server_thread.start()
     bot.infinity_polling()
