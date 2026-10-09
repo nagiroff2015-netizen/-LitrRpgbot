@@ -118,7 +118,7 @@ def handle_game_action(message):
         conn.close()
         return
     
-    # ФИКС: Строго вытаскиваем текстовые значения по индексам из SQLite
+    # ФИКС ИНДЕКСОВ: Вытаскиваем очищенные текстовые значения
     world_id = player[2]
     p_name = player[1]
     p_lvl = player[3]
@@ -136,11 +136,12 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
+    # ФИКС ПРОМПТА: Заменили {player} на корректные {p_name}, {p_lvl} и т.д.
     system_prompt = (
         f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
         f"Действие: \"{action}\"\n"
-        "Опиши художественно последствия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
+        "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
         "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
     )
@@ -153,6 +154,7 @@ def handle_game_action(message):
             "X-Title": "Multiplayer RPG Bot"
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
+        
         response = requests.post("https://openrouter.ai", headers=headers, json=data)
         response_json = response.json()
         
@@ -179,7 +181,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, "📴 Ошибка обработки мира ИИ. Попробуйте еще раз.")
+        bot.send_message(message.chat.id, "📴 Ошибка обработки мира ИИ. Повторите попытку.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
