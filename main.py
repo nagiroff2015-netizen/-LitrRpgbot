@@ -3,7 +3,6 @@ import json
 import sqlite3
 import telebot
 import requests
-from threading import Thread
 from flask import Flask, request
 
 # =====================================================================
@@ -59,34 +58,37 @@ def send_welcome(message):
 
 @bot.message_handler(commands=['join'])
 def join_world(message):
-    args = message.text.split(maxsplit=2)
-    if len(args) < 3:
-        bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
-        return
-    
-    world_id = args[1].strip().lower()
-    world_name = args[2].strip()
-    user_id = message.from_user.id
-    username = message.from_user.username or message.from_user.first_name
+    try:
+        args = message.text.split(maxsplit=2)
+        if len(args) < 3:
+            bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
+            return
+        
+        world_id = args[1].strip().lower()
+        world_name = args[2].strip()
+        user_id = message.from_user.id
+        username = message.from_user.username or message.from_user.first_name
 
-    conn = sqlite3.connect('litrpg_game.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
-    if not cursor.fetchone():
-        cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, "Мир " + world_name))
-        cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, "Мир " + world_name + " создан."))
+        conn = sqlite3.connect('litrpg_game.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
+        if not cursor.fetchone():
+            cursor.execute('INSERT INTO worlds (world_id, name, lore) VALUES (?, ?, ?)', (world_id, world_name, "Мир " + world_name))
+            cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, "Мир " + world_name + " создан."))
 
-    cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
-    if cursor.fetchone():
-        cursor.execute('UPDATE players SET world_id = ? WHERE user_id = ?', (world_id, user_id))
-    else:
-        cursor.execute('''
-            INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
-            VALUES (?, ?, ?, 1, 100, 100, 50, 50, 10, '📜 Карта, 🗡️ Кинжал', 'Стартовая деревня')
-        ''', (user_id, username, world_id))
-    conn.commit()
-    conn.close()
-    bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
+        cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
+        if cursor.fetchone():
+            cursor.execute('UPDATE players SET world_id = ? WHERE user_id = ?', (world_id, user_id))
+        else:
+            cursor.execute('''
+                INSERT INTO players (user_id, username, world_id, level, hp, max_hp, mp, max_mp, gold, inventory, location)
+                VALUES (?, ?, ?, 1, 100, 100, 50, 50, 10, '📜 Карта, 🗡️ Кинжал', 'Стартовая деревня')
+            ''', (user_id, username, world_id))
+        conn.commit()
+        conn.close()
+        bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при входе в мир: {str(e)}")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -97,7 +99,7 @@ def show_status(message):
     p = cursor.fetchone()
     conn.close()
     if not p:
-        bot.reply_to(message, "❌ Используйте /join")
+        bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
         return
     status_text = (
         f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
@@ -109,15 +111,19 @@ def show_status(message):
 def handle_game_action(message):
     user_id = message.from_user.id
     action = message.text
+    
     conn = sqlite3.connect('litrpg_game.db')
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
     player = cursor.fetchone()
+    
+    # СТРОГАЯ ПРОВЕРКА: Если база обнулилась, просим игрока перезайти в мир
     if not player:
-        bot.reply_to(message, "❌ Используйте /join")
+        bot.reply_to(message, "❌ База данных была обновлена. Пожалуйста, заново подключитесь к миру командой:\n`/join мир1 Хаус`")
         conn.close()
         return
     
+    # Безопасная распаковка данных
     world_id = player[2]
     p_name = player[1]
     p_lvl = player[3]
@@ -153,10 +159,9 @@ def handle_game_action(message):
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
-        response = requests.post("https://openrouter.ai", headers=headers, json=data)
+        response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
-        # ФИКС: Добавлен правильный индекс списка [0] для извлечения ответа ИИ
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
@@ -180,7 +185,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Системная ошибка: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой связи с ИИ: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
