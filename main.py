@@ -6,23 +6,21 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
+# ВСТАВЛЕН СВЕЖИЙ РАБОЧИЙ КЛЮЧ НЕЙРОСЕТИ С ЛИМИТАМИ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "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"
 # =====================================================================
 
 MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
-# Получаем адрес нашего приложения на Render автоматически
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 @app.route('/')
 def home():
-    return "Бот активен и работает через Webhook!"
+    return "ЛитРПГ Бот успешно работает через Webhook!"
 
-# Точка входа для сообщений от Telegram
 @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
 def get_message():
     json_string = request.get_data().decode('utf-8')
@@ -50,10 +48,11 @@ init_db()
 def send_welcome(message):
     welcome_text = (
         "⚔️ **Добро пожаловать в многопользовательскую ЛитРПГ песочницу!** ⚔️\n\n"
+        "Вы можете играть в одном мире с друзьями со своих устройств независимо!\n\n"
         "Выполните команду, чтобы подключиться к миру:\n"
         "`/join <ID_мира> <Название_Мира>`\n"
-        "Пример: `/join mir1 Асгард` (все, кто введет одинаковый ID, окажутся вместе!)\n\n"
-        "Команды in игре:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
+        "Пример: `/join mir1 Асгард` (все, кто введут один ID, окажутся вместе)\n\n"
+        "Команды:\n/status — Ваши характеристики\nЛюбой текст — ваше действие!"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
@@ -144,7 +143,7 @@ def handle_game_action(message):
         response = requests.post("https://openrouter.ai", headers=headers, json=data)
         
         response_json = response.json()
-        ai_reply = response_json['choices']['message']['content']
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -166,10 +165,9 @@ def handle_game_action(message):
                 print("Ошибка БД:", e)
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ: {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой ИИ (сервер перегружен, попробуйте еще раз).")
 
 if __name__ == '__main__':
-    # Принудительно удаляем старые вебхуки и ставим новый на адрес Render
     bot.remove_webhook()
     if RENDER_EXTERNAL_URL:
         bot.set_webhook(url=RENDER_EXTERNAL_URL + '/' + TELEGRAM_BOT_TOKEN)
