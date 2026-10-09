@@ -8,7 +8,7 @@ from flask import Flask
 
 # =====================================================================
 # ВАШИ ЖИВЫЕ КЛЮЧИ:
-TELEGRAM_BOT_TOKEN = "8837995662:AAE7imrd6L2_doZ8B9aTEwV4HuU1whx-ZOg"
+TELEGRAM_BOT_TOKEN = "8837995662:AAHxdIZqrpTSVMC4PmQKaCRmKoEkd0c6GRk"
 OPENAI_API_KEY = "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"
 # =====================================================================
 
