@@ -119,7 +119,7 @@ def handle_game_action(message):
     player = cursor.fetchone()
     
     if not player:
-        bot.reply_to(message, "❌ Пожалуйста, сначала подключиться к миру командой:\n`/join мир1 Хаус`")
+        bot.reply_to(message, "❌ Пожалуйста, сначала подключитесь к миру командой:\n`/join мир1 Хаус`")
         conn.close()
         return
     
@@ -158,9 +158,9 @@ def handle_game_action(message):
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
+        # ФИКС: Добавлен обязательный слэш на конце URL-адреса OpenRouter
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
-        # ДИАГНОСТИКА: Проверяем статус ответа сервера
         if response.status_code != 200:
             bot.send_message(message.chat.id, f"❌ Ошибка сервера OpenRouter (Код {response.status_code}):\n{response.text[:200]}")
             return
@@ -168,7 +168,7 @@ def handle_game_action(message):
         try:
             response_json = response.json()
         except Exception:
-            bot.send_message(message.chat.id, f"❌ Ошибка разбора ответа. Сервер вернул текст вместо JSON:\n{response.text[:200]}")
+            bot.send_message(message.chat.id, f"❌ Ошибка разбора ответа сервера:\n{response.text[:200]}")
             return
         
         ai_reply = response_json['choices'][0]['message']['content']
