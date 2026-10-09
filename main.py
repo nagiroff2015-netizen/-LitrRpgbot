@@ -140,10 +140,11 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
+    # ФИКС: Фигурные скобки JSON изолированы от f-строки
     system_prompt = (
-        f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
+        "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
-        f"Действие: \"{action}\"\n"
+        f"Действие: \"{action}\"\n\n"
         "Опиши художественно последствия его действия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
         "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
@@ -161,7 +162,6 @@ def handle_game_action(message):
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
-        # ФИКС: Чтение ответа ИИ из массива choices[0]
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
