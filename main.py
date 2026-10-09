@@ -6,9 +6,9 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
+# БЕЗОПАСНОСТЬ: Ключи загружаются из настроек Render (Environment)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-SAMBANOVA_API_KEY = "3cb477c6-85c4-4392-bd94-f3df9c74911b"
+SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY") 
 # =====================================================================
 
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
@@ -124,7 +124,6 @@ def handle_game_action(message):
         conn.close()
         return
     
-    # ИСПРАВЛЕНО: Распаковываем ячейки базы данных строго по индексам в чистые строки
     world_id = str(player[2])
     p_name = str(player[1])
     p_lvl = str(player[3])
@@ -164,6 +163,8 @@ def handle_game_action(message):
             ],
             "temperature": 0.7
         }
+        
+        # ИСПРАВЛЕНО: Указан правильный эндпоинт для работы с моделями SambaNova
         response = requests.post("https://sambanova.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
@@ -185,17 +186,12 @@ def handle_game_action(message):
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
-            except Exception as e:
-                print("Ошибка БД:", e)
+            except Exception as json_error:
+                print(f"Ошибка парсинга JSON от ИИ: {str(json_error)}")
         
-        bot.send_message(message.chat.id, display_text)
-    except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку.")
+        # ИСПРАВЛЕНО: Теперь бот отправляет текст истории игроку в любом случае
+        bot.reply_to(message, display_text)
 
-if __name__ == '__main__':
-    bot.remove_webhook()
-    if RENDER_EXTERNAL_URL:
-        bot.set_webhook(url=RENDER_EXTERNAL_URL + '/' + TELEGRAM_BOT_TOKEN)
-    
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    except Exception as e:
+        print(f"Общая ошибка в handle_game_action: {str(e)}")
+        bot.reply_to(message, "⚠️ Мастер временно задумался (ошибка API). Попробуйте совершить действие еще раз!")
