@@ -6,13 +6,14 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧ ИИ БОЛЬШЕ НЕ НУЖЕН!)
+# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧИ ИИ БОЛЬШЕ ВООБЩЕ НЕ НУЖНЫ!)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 # =====================================================================
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
+# Подключение к БД с доступом по именам колонок
 def get_db_connection():
     conn = sqlite3.connect('litrpg_game.db')
     conn.row_factory = sqlite3.Row
@@ -47,19 +48,17 @@ def init_db():
 
 init_db()
 
-# Функция для запроса к ИИ через бесплатный анонимный шлюз DuckDuckGo
+# Стабильная функция запроса к ИИ без использования сторонних ключей
 def ask_duckduckgo_ai(system_prompt, user_action):
     try:
         session = requests.Session()
-        # Шаг 1: Получаем обязательный внутренний токен шлюза
         v_headers = {"x-client-variant": "chat", "User-Agent": "Mozilla/5.0"}
         v_res = session.get("https://duckduckgo.com", headers=v_headers, timeout=10)
         v_token = v_res.headers.get("x-vqd-4")
         
         if not v_token:
-            return "ERROR: Не удалось получить доступ к шлюзу."
+            return "ERROR: Не удалось получить токен доступа к ИИ."
 
-        # Шаг 2: Отправляем запрос в модель Llama-3-70b
         chat_headers = {
             "x-client-variant": "chat",
             "x-vqd-4": v_token,
@@ -77,7 +76,6 @@ def ask_duckduckgo_ai(system_prompt, user_action):
         
         res = session.post("https://duckduckgo.com", headers=chat_headers, json=payload, timeout=25)
         
-        # Парсим потоковый ответ в обычный текст
         text_response = ""
         for line in res.iter_lines():
             if line:
@@ -93,7 +91,7 @@ def ask_duckduckgo_ai(system_prompt, user_action):
                         continue
         return text_response.strip()
     except Exception as e:
-        return f"ERROR: Сбой сети шлюза: {str(e)}"
+        return f"ERROR: Сбой сети ИИ-шлюза: {str(e)}"
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -204,7 +202,7 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в мире."
         )
 
-        # Вызов ИИ через бесплатный анонимный шлюз без API ключей
+        # Вызов стабильного ИИ
         ai_reply = ask_duckduckgo_ai(system_prompt, action)
 
         if ai_reply.startswith("ERROR:"):
@@ -230,3 +228,8 @@ def handle_game_action(message):
                 conn.commit()
                 conn.close()
             except Exception as json_error:
+                print(f"Ошибка парсинга JSON: {str(json_error)}")
+        
+        bot.reply_to(message, display_text)
+
+    except Exception as e:
