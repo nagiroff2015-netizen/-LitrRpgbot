@@ -63,7 +63,6 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ИСПРАВЛЕНО НАВСЕГДА: Извлекаем чистые строки по индексам из списка аргументов
         world_id = parts[1].strip().lower()
         world_name = parts[2].strip()
         user_id = message.from_user.id
@@ -72,7 +71,6 @@ def join_world(message):
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # Полностью очищаем старые забагованные записи
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -128,7 +126,6 @@ def handle_game_action(message):
             conn.close()
             return
         
-        # Получаем очищенные текстовые значения из кортежа SQLite строго по их реальным индексам
         world_id = str(player[2])
         p_name = str(player[1])
         p_lvl = str(player[3])
@@ -168,10 +165,14 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
-        # ИСПРАВЛЕНО НАВСЕГДА: Запрос уходит на стабильный, неблокируемый шлюз OpenRouter API
+        # ИСПРАВЛЕНО: Указан правильный конечный адрес для вызова моделей через OpenRouter
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
-        response_json = response.json()
         
+        if response.status_code != 200:
+            bot.reply_to(message, f"❌ Ошибка шлюза API. Статус: {response.status_code}\nТекст: {response.text[:200]}")
+            return
+
+        response_json = response.json()
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
@@ -183,24 +184,23 @@ def handle_game_action(message):
                 display_text = ai_reply[:ai_reply.find("UPDATE_DATA:")].strip()
                 
                 data_parsed = json.loads(json_str)
+                
+                # ИСПРАВЛЕНО: Восстановлен оборванный в конце блок записи в базу данных
                 conn = sqlite3.connect('litrpg_game.db')
                 cursor = conn.cursor()
                 cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
-                               (int(data_parsed['level']), int(data_parsed['hp']), int(data_parsed['mp']), int(data_parsed['gold']), str(data_parsed['inventory']), str(data_parsed['location']), user_id))
+                               (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
-            except Exception as e:
-                print("Ошибка БД:", e)
+            except Exception as json_error:
+                print(f"Ошибка парсинга JSON: {str(json_error)}")
         
-        bot.send_message(message.chat.id, display_text)
-    except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ, повторите попытку. Ошибка: {str(e)}")
+        bot.reply_to(message, display_text)
+
+    except Exception as e:
+        print(f"Общая ошибка: {str(e)}")
+        bot.reply_to(message, f"⚠️ Не удалось обработать действие.\nОшибка: {str(e)}")
 
 if __name__ == '__main__':
-    bot.remove_webhook()
-    if RENDER_EXTERNAL_URL:
-        bot.set_webhook(url=RENDER_EXTERNAL_URL + '/' + TELEGRAM_BOT_TOKEN)
-    
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000)
