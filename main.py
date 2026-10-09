@@ -124,6 +124,7 @@ def handle_game_action(message):
         conn.close()
         return
     
+    # ИСПРАВЛЕНО: Индексы [1]-[10] успешно возвращены на место
     world_id = str(player[2])
     p_name = str(player[1])
     p_lvl = str(player[3])
@@ -164,7 +165,6 @@ def handle_game_action(message):
             "temperature": 0.7
         }
         
-        # ИСПРАВЛЕНО: Указан правильный эндпоинт для работы с моделями SambaNova
         response = requests.post("https://sambanova.ai", headers=headers, json=data, timeout=30)
         response_json = response.json()
         
@@ -189,7 +189,6 @@ def handle_game_action(message):
             except Exception as json_error:
                 print(f"Ошибка парсинга JSON от ИИ: {str(json_error)}")
         
-        # ИСПРАВЛЕНО: Теперь бот отправляет текст истории игроку в любом случае
         bot.reply_to(message, display_text)
 
     except Exception as e:
