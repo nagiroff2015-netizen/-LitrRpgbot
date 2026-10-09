@@ -8,7 +8,6 @@ from flask import Flask, request
 # =====================================================================
 # ВАШИ ЖИВЫЕ КЛЮЧИ НАМЕРТВО ВШИТЫ СЮДА:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# ВШЕН НОВЫЙ РАБОЧИЙ КЛЮЧ OPENROUTER СО СВЕЖИМИ ЛИМИТАМИ:
 OPENAI_API_KEY = "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"
 # =====================================================================
 
@@ -65,16 +64,16 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        # ТОЧНЫЙ ИСПРАВЛЕННЫЙ ПАРСИНГ: Извлекаем чистые строки из списка аргументов по индексам
-        world_id = str(args[1]).strip().lower()
-        world_name = str(args[2]).strip()
+        # ЖЕЛЕЗОБЕТОННЫЙ ИСПРАВЛЕННЫЙ ПАРСИНГ: Извлекаем элементы строго по одиночке из индексов
+        world_id = args[1].strip().lower()
+        world_name = args[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
         conn = sqlite3.connect('litrpg_game.db')
         cursor = conn.cursor()
         
-        # На всякий случай чистим старые сломанные записи
+        # Стираем старые сломанные записи
         cursor.execute('DELETE FROM players WHERE user_id = ?', (user_id,))
         
         cursor.execute('SELECT * FROM worlds WHERE world_id = ?', (world_id,))
@@ -104,8 +103,6 @@ def show_status(message):
         if not p:
             bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
             return
-        
-        # ТОЧНЫЙ ПАРСИНГ КОРТЕЖА: Достаем элементы строго по номерам их колонок в таблице SQLite
         status_text = (
             f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
             f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
@@ -129,7 +126,6 @@ def handle_game_action(message):
         conn.close()
         return
     
-    # Чистая распаковка ячеек базы данных без скобок массивов
     world_id = player[2]
     p_name = player[1]
     p_lvl = player[3]
@@ -147,7 +143,6 @@ def handle_game_action(message):
     world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
-    # Текст промпта склеивается обычными строками, чтобы f-строка не ломала структуру JSON
     system_prompt = (
         "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
         f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
@@ -166,7 +161,6 @@ def handle_game_action(message):
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
-        # Запрос уходит на точный URL-адрес OpenRouter API без слэша на конце
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
         if response.status_code != 200:
@@ -175,14 +169,9 @@ def handle_game_action(message):
 
         response_json = response.json()
         
-        # Универсальный многослойный синтаксический парсер ответов API
         ai_reply = ""
-        if 'choices' in response_json:
-            choices = response_json['choices']
-            if isinstance(choices, list) and len(choices) > 0:
-                choice = choices[0]
-                if 'message' in choice and 'content' in choice['message']:
-                    ai_reply = choice['message']['content']
+        if 'choices' in response_json and len(response_json['choices']) > 0:
+            ai_reply = response_json['choices'][0]['message']['content']
         
         if not ai_reply:
             ai_reply = str(response_json)
