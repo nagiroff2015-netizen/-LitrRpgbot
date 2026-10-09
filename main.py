@@ -86,7 +86,7 @@ def join_world(message):
         ''', (user_id, username, world_id))
     conn.commit()
     conn.close()
-    bot.reply_to(message, "✨ Вы успешно вошли в мир **" + world_name + "**! Напишите любое действие, чтобы начать.")
+    bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -118,7 +118,18 @@ def handle_game_action(message):
         conn.close()
         return
     
+    # ФИКС: Строго вытаскиваем текстовые значения по индексам из SQLite
     world_id = player[2]
+    p_name = player[1]
+    p_lvl = player[3]
+    p_hp = player[4]
+    p_max_hp = player[5]
+    p_mp = player[6]
+    p_max_mp = player[7]
+    p_gold = player[8]
+    p_inv = player[9]
+    p_loc = player[10]
+
     cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
     players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, Локация: {p[3]})" for p in cursor.fetchall()])
     cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
@@ -126,8 +137,8 @@ def handle_game_action(message):
     conn.close()
 
     system_prompt = (
-        "Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n" + players_info + "\nИстория событий:\n" + world_history + "\n"
-        f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\n"
+        f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
+        f"Ходит: {p_name} (Ур {p_lvl}, HP: {p_hp}/{p_max_hp}, MP: {p_mp}/{p_max_mp}, Золото: {p_gold}, Инв: {p_inv}, Лок: {p_loc}).\n"
         f"Действие: \"{action}\"\n"
         "Опиши художественно последствия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
@@ -142,8 +153,6 @@ def handle_game_action(message):
             "X-Title": "Multiplayer RPG Bot"
         }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
-        
-        # ИСПРАВЛЕНО: Указан точный URL-адрес для запросов к OpenRouter API
         response = requests.post("https://openrouter.ai", headers=headers, json=data)
         response_json = response.json()
         
@@ -162,7 +171,7 @@ def handle_game_action(message):
                 cursor = conn.cursor()
                 cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
                                (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
-                cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {player[1]}: {action}"))
+                cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {p_name}: {action}"))
                 conn.commit()
                 conn.close()
             except Exception as e:
@@ -170,7 +179,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, "📴 Ошибка обработки мира ИИ. Повторите попытку.")
+        bot.send_message(message.chat.id, "📴 Ошибка обработки мира ИИ. Попробуйте еще раз.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
