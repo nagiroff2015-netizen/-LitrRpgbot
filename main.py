@@ -6,9 +6,8 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# СТАБИЛЬНЫЕ ЖИВЫЕ КЛЮЧИ (ЗАЩИЩЕНЫ ОТ БЛОКИРОВОК DATA-ЦЕНТРОВ)
+# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧИ ИИ БОЛЬШЕ ВООБЩЕ НЕ НУЖНЫ!)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-HF_API_KEY = "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"  # Официальный ИИ-токен
 # =====================================================================
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
@@ -21,7 +20,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот на сверхстабильном ИИ Meta Llama запущен!"
+    return "ЛитРПГ Бот на сверхстабильном шлюзе ИИ запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -48,33 +47,24 @@ def init_db():
 
 init_db()
 
-# Новая неубиваемая функция запроса к оригинальной нейросети Meta Llama
-def ask_meta_llama_ai(system_prompt, user_action):
+# Новая функция запроса к свободному ИИ без использования внешних токенов
+def ask_free_rpg_ai(system_prompt, user_action):
     try:
-        url = "https://huggingface.co"
-        headers = {"Authorization": f"Bearer {HF_API_KEY}", "Content-Type": "application/json"}
-        
-        # Объединяем системный лор и действие для максимальной стабильности шлюза
-        full_prompt = f"<|system|>\n{system_prompt}\n<|user|>\n{user_action}\n<|assistant|>\n"
-        
+        url = "https://pollinations.ai"
         payload = {
-            "inputs": full_prompt,
-            "parameters": {"max_new_tokens": 800, "temperature": 0.7, "return_full_text": False}
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_action}
+            ],
+            "model": "openai",
+            "jsonMode": False
         }
-        
-        res = requests.post(url, headers=headers, json=payload, timeout=25)
+        res = requests.post(url, json=payload, timeout=25)
         
         if res.status_code != 200:
-            return f"ERROR: Сервер ИИ перегружен (Код {res.status_code}). Попробуйте еще раз через секунду!"
+            return f"ERROR: Сервер ИИ временно занят (Код {res.status_code}). Попробуйте еще раз!"
             
-        res_json = res.json()
-        
-        if isinstance(res_json, list) and len(res_json) > 0:
-            return res_json[0].get("generated_text", "").strip()
-        elif isinstance(res_json, dict) and "generated_text" in res_json:
-            return res_json["generated_text"].strip()
-            
-        return "ERROR: Неверный формат ответа сети."
+        return res.text.strip()
     except Exception as e:
         return f"ERROR: Сбой шины данных: {str(e)}"
 @bot.message_handler(commands=['start', 'help'])
@@ -186,8 +176,7 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в мире."
         )
 
-        # Вызов стабильного ИИ оригинальной архитектуры Meta
-        ai_reply = ask_meta_llama_ai(system_prompt, action)
+        ai_reply = ask_free_rpg_ai(system_prompt, action)
 
         if ai_reply.startswith("ERROR:"):
             bot.reply_to(message, f"❌ Ошибка шлюза ИИ:\n{ai_reply}")
