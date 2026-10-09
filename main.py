@@ -7,12 +7,13 @@ from threading import Thread
 from flask import Flask
 
 # =====================================================================
-# ВАШИ ЖИВЫЕ КЛЮЧИ:
+# ВАШИ ЖИВЫЕ КЛЮЧИ АВТОМАТИЧЕСКИ ПОДТЯГИВАЮТСЯ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = "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"
 # =====================================================================
 
-MODEL_NAME = "meta-llama/llama-3-8b-instruct:free"
+# Самая стабильная бесплатная модель, идеально понимающая русский язык
+MODEL_NAME = "google/gemini-2.5-flash"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 # Фейковый веб-сервер для прохождения проверки Render Free
@@ -59,7 +60,8 @@ def join_world(message):
         bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
         return
     
-    world_id, world_name = args[1].lower(), args[2]
+    world_id = args[1].lower()
+    world_name = args[2]
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
 
@@ -93,7 +95,11 @@ def show_status(message):
     if not p:
         bot.reply_to(message, "❌ Используйте /join")
         return
-    bot.reply_to(message, f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}", parse_mode='Markdown')
+    status_text = (
+        f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
+        f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
+    )
+    bot.reply_to(message, status_text, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -107,6 +113,7 @@ def handle_game_action(message):
         bot.reply_to(message, "❌ Используйте /join")
         conn.close()
         return
+    
     world_id = player[2]
     cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
     players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, Локация: {p[3]})" for p in cursor.fetchall()])
@@ -115,36 +122,49 @@ def handle_game_action(message):
     conn.close()
 
     system_prompt = (
-        f"Ты Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория:\n{world_history}\n"
+        f"Ты Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория последних событий:\n{world_history}\n"
         f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\nДействие: \"{action}\"\n"
-        "Опиши художественно последствия на русском языке. В самом конце добавь строго:\n"
-        "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}"
+        "Опиши художественно последствия на русском языке. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
+        f"UPDATE_DATA: {{\"level\": {player[3]}, \"hp\": {player[4]}, \"mp\": {player[6]}, \"gold\": {player[8]}, \"inventory\": \"{player[9]}\", \"location\": \"{player[10]}\"}}\n"
+        "Изменяй значения в JSON в зависимости от происходящего в мире (получил опыт/урон, нашел золото, сменил локацию)."
     )
 
     try:
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json", "X-Title": "RPG Bot"}
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}", 
+            "Content-Type": "application/json", 
+            "HTTP-Referer": "https://localhost",
+            "X-Title": "RPG Bot"
+        }
         data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         response = requests.post("https://openrouter.ai", headers=headers, json=data)
-        ai_reply = response.json()['choices']['message']['content']
+        
+        response_json = response.json()
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
             try:
-                start_idx, end_idx = ai_reply.find("{"), ai_reply.rfind("}") + 1
-                data_parsed = json.loads(ai_reply[start_idx:end_idx])
+                start_idx = ai_reply.find("{")
+                end_idx = ai_reply.rfind("}") + 1
+                json_str = ai_reply[start_idx:end_idx]
                 display_text = ai_reply[:ai_reply.find("UPDATE_DATA:")].strip()
+                
+                data_parsed = json.loads(json_str)
                 conn = sqlite3.connect('litrpg_game.db')
                 cursor = conn.cursor()
-                cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
+                cursor.execute('UPDATE players SET level=?, hp=?, mp=?, gold=?, inventory=?, location=? WHERE user_id=?', 
+                               (data_parsed['level'], data_parsed['hp'], data_parsed['mp'], data_parsed['gold'], data_parsed['inventory'], data_parsed['location'], user_id))
                 cursor.execute('INSERT INTO logs (world_id, entry) VALUES (?, ?)', (world_id, f"[{data_parsed['location']}] {player[1]}: {action}"))
                 conn.commit()
                 conn.close()
-            except: pass
+            except Exception as e:
+                print("Ошибка БД:", e)
         bot.reply_to(message, display_text)
-    except Exception as e: bot.reply_to(message, f"📴 Сбой ИИ: {str(e)}")
+    except Exception as e: 
+        bot.reply_to(message, f"📴 Сбой ИИ (сервер перегружен, попробуйте еще раз): {str(e)}")
 
 if __name__ == '__main__':
-    # Запуск сервера и бота одновременно в разных потоках
     server_thread = Thread(target=run_web_server)
     server_thread.start()
     bot.infinity_polling()
