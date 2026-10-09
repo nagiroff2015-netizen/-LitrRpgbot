@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import telebot
+import requests
 from openai import OpenAI
 from flask import Flask, request
 
@@ -73,8 +74,9 @@ def join_world(message):
             bot.reply_to(message, "⚠️ Пишите так: `/join <ID_мира> <Название_Мира>`")
             return
         
-        world_id = args.strip().lower()
-        world_name = args.strip()
+        # ФИКС: Корректно извлекаем элементы по индексам из списка аргументов
+        world_id = args[1].strip().lower()
+        world_name = args[2].strip()
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name
 
@@ -101,20 +103,23 @@ def join_world(message):
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
-    user_id = message.from_user.id
-    conn = sqlite3.connect('litrpg_game.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
-    p = cursor.fetchone()
-    conn.close()
-    if not p:
-        bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
-        return
-    status_text = (
-        f"👤 **Игрок:** {p}\n📍 **Локация:** {p}\n📊 **Уровень:** {p}\n"
-        f"❤️ **HP:** {p}/{p}\n🧪 **MP:** {p}/{p}\n💰 **Золото:** {p}\n🎒 **Инвентарь:** {p}"
-    )
-    bot.reply_to(message, status_text, parse_mode='Markdown')
+    try:
+        user_id = message.from_user.id
+        conn = sqlite3.connect('litrpg_game.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
+        p = cursor.fetchone()
+        conn.close()
+        if not p:
+            bot.reply_to(message, "❌ Вы не вошли в мир. Используйте /join")
+            return
+        status_text = (
+            f"👤 **Игрок:** {p[1]}\n📍 **Локация:** {p[10]}\n📊 **Уровень:** {p[3]}\n"
+            f"❤️ **HP:** {p[4]}/{p[5]}\n🧪 **MP:** {p[6]}/{p[7]}\n💰 **Золото:** {p[8]}\n🎒 **Инвентарь:** {p[9]}"
+        )
+        bot.reply_to(message, status_text, parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка вывода статуса: {str(e)}")
 
 @bot.message_handler(func=lambda message: not message.text.startswith('/'))
 def handle_game_action(message):
@@ -131,21 +136,21 @@ def handle_game_action(message):
         conn.close()
         return
     
-    world_id = player
-    p_name = player
-    p_lvl = player
-    p_hp = player
-    p_max_hp = player
-    p_mp = player
-    p_max_mp = player
-    p_gold = player
-    p_inv = player
-    p_loc = player
+    world_id = player[2]
+    p_name = player[1]
+    p_lvl = player[3]
+    p_hp = player[4]
+    p_max_hp = player[5]
+    p_mp = player[6]
+    p_max_mp = player[7]
+    p_gold = player[8]
+    p_inv = player[9]
+    p_loc = player[10]
 
     cursor.execute('SELECT username, level, hp, location FROM players WHERE world_id = ?', (world_id,))
-    players_info = "\n".join([f"- {p} (Ур. {p}, HP: {p}, Локация: {p})" for p in cursor.fetchall()])
+    players_info = "\n".join([f"- {p[0]} (Ур. {p[1]}, HP: {p[2]}, Локация: {p[3]})" for p in cursor.fetchall()])
     cursor.execute('SELECT entry FROM logs WHERE world_id = ? ORDER BY id DESC LIMIT 5', (world_id,))
-    world_history = "\n".join([l for l in reversed(cursor.fetchall())])
+    world_history = "\n".join([l[0] for l in reversed(cursor.fetchall())])
     conn.close()
 
     system_prompt = (
@@ -158,24 +163,23 @@ def handle_game_action(message):
     )
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": system_prompt}]
-        )
+        # Прямой HTTP-запрос к OpenRouter для точной диагностики ответа
+        headers = {
+            "Authorization": "Bearer " + OPENAI_API_KEY, 
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://localhost",
+            "X-Title": "Multiplayer RPG Bot"
+        }
+        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
         
-        # ЖЕЛЕЗОБЕТОННЫЙ УНИВЕРСАЛЬНЫЙ ПАРСЕР ОТВЕТА ИИ:
-        if isinstance(response, str):
-            ai_reply = response
-        elif hasattr(response, 'choices') and len(response.choices) > 0:
-            ai_reply = response.choices.message.content
-        else:
-            # Если вернулась строка в формате JSON-текста
-            try:
-                res_dict = json.loads(str(response))
-                ai_reply = res_dict['choices']['message']['content']
-            except:
-                ai_reply = str(response)
-
+        response = requests.post("https://openrouter.ai/chat/completions", headers=headers, json=data, timeout=30)
+        
+        if response.status_code != 200:
+            bot.send_message(message.chat.id, f"❌ Ошибка ИИ (Код {response.status_code}):\n{response.text[:200]}")
+            return
+            
+        response_json = response.json()
+        ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -198,7 +202,7 @@ def handle_game_action(message):
         
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Ошибка ответа ИИ (Попробуйте повторить ход): {str(e)}")
+        bot.send_message(message.chat.id, f"📴 Сбой в обработчике: {str(e)}")
 
 if __name__ == '__main__':
     bot.remove_webhook()
