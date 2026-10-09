@@ -15,16 +15,14 @@ MODEL_NAME = "meta-llama/llama-3.1-8b-instruct:free"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
-# Специальный класс, преобразующий строки БД в удобные объекты.
-# Теперь можно писать player.world_id вместо player['world_id'] или player[2]
 class RowObject:
     def __init__(self, cursor, row):
         for idx, col in enumerate(cursor.description):
-            setattr(self, col[0], row[idx])
+            setattr(self, col, row[idx])
 
 def get_db_connection():
     conn = sqlite3.connect('litrpg_game.db')
-    conn.row_factory = RowObject  # Подключаем ко всем операциям
+    conn.row_factory = RowObject
     return conn
 
 @app.route('/')
@@ -43,11 +41,6 @@ def get_message():
 def init_db():
     conn = sqlite3.connect('litrpg_game.db')
     cursor = conn.cursor()
-    # Удаляем старые забагованные таблицы, чтобы структура пересоздалась с нуля
-    cursor.execute('DROP TABLE IF EXISTS worlds')
-    cursor.execute('DROP TABLE IF EXISTS players')
-    cursor.execute('DROP TABLE IF EXISTS logs')
-    
     cursor.execute('CREATE TABLE IF NOT EXISTS worlds (world_id TEXT PRIMARY KEY, name TEXT, lore TEXT)')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS players (
@@ -184,11 +177,19 @@ def handle_game_action(message):
         
         response = requests.post("https://openrouter.ai", headers=headers, json=data, timeout=30)
         
-        if response.status_code != 200:
-            bot.reply_to(message, f"❌ Ошибка шлюза API. Статус: {response.status_code}\nТекст: {response.text[:200]}")
+        # Безопасно проверяем, пришел ли вообще JSON-текст
+        try:
+            response_json = response.json()
+        except Exception:
+            bot.reply_to(message, f"❌ Сервер прислал не JSON-текст. Статус: {response.status_code}\nОтвет: {response.text[:300]}")
             return
 
-        response_json = response.json()
+        # Проверяем, нет ли ошибки внутри JSON-ответа OpenRouter
+        if "error" in response_json:
+            error_msg = response_json["error"].get("message", "Неизвестная ошибка")
+            bot.reply_to(message, f"❌ Ошибка шлюза OpenRouter API:\n`{error_msg}`", parse_mode='Markdown')
+            return
+
         ai_reply = response_json['choices'][0]['message']['content']
         display_text = ai_reply
 
