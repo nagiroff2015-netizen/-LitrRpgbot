@@ -3,15 +3,17 @@ import json
 import sqlite3
 import telebot
 import requests
+from threading import Thread
 from flask import Flask, request
 
 # =====================================================================
-# ВСТАВЛЕН СВЕЖИЙ РАБОЧИЙ КЛЮЧ НЕЙРОСЕТИ С ЛИМИТАМИ:
+# ВАШ ТОКЕН ТЕЛЕГРАМ АВТОМАТИЧЕСКИ ПОДТЯГИВАЕТСЯ:
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = "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"
 # =====================================================================
 
-MODEL_NAME = "google/gemini-2.5-flash"
+# Переключаемся на стабильный и полностью свободный сервер Hugging Face
+API_URL = "https://huggingface.co"
+
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
@@ -85,7 +87,7 @@ def join_world(message):
         ''', (user_id, username, world_id))
     conn.commit()
     conn.close()
-    bot.reply_to(message, f"✨ Вы вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
+    bot.reply_to(message, f"✨ Вы успешно вошли в мир **{world_name}**! Напишите любое действие, чтобы начать.")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
@@ -125,25 +127,24 @@ def handle_game_action(message):
     conn.close()
 
     system_prompt = (
-        f"Ты Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория последних событий:\n{world_history}\n"
+        f"Ты продвинутый Гейм-Мастер ЛитРПГ игры. Текущие игроки в мире:\n{players_info}\nИстория событий:\n{world_history}\n"
         f"Ходит: {player[1]} (Ур {player[3]}, HP: {player[4]}/{player[5]}, MP: {player[6]}/{player[7]}, Золото: {player[8]}, Инв: {player[9]}, Лок: {player[10]}).\nДействие: \"{action}\"\n"
-        "Опиши художественно последствия на русском языке. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
+        "Опиши художественно последствия на русском языке в стиле ЛитРПГ фэнтези. В самом конце ответа добавь строго системный блок в таком JSON-формате:\n"
         f"UPDATE_DATA: {{\"level\": {player[3]}, \"hp\": {player[4]}, \"mp\": {player[6]}, \"gold\": {player[8]}, \"inventory\": \"{player[9]}\", \"location\": \"{player[10]}\"}}\n"
-        "Изменяй значения в JSON в зависимости от происходящего в мире (получил опыт/урон, нашел золото, сменил локацию)."
+        "Изменяй значения в JSON в зависимости от происходящего в мире (нанесение урона, изменение золота или локации)."
     )
 
     try:
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}", 
-            "Content-Type": "application/json", 
-            "HTTP-Referer": "https://localhost",
-            "X-Title": "RPG Bot"
+        # Прямой и стабильный запрос к Hugging Face API
+        payload = {
+            "inputs": f"<|system|>\n{system_prompt}\n<|user|>\n{action}\n<|assistant|>\n",
+            "parameters": {"max_new_tokens": 500, "return_full_text": False}
         }
-        data = {"model": MODEL_NAME, "messages": [{"role": "user", "content": system_prompt}]}
-        response = requests.post("https://openrouter.ai", headers=headers, json=data)
-        
+        response = requests.post(API_URL, json=payload)
         response_json = response.json()
-        ai_reply = response_json['choices'][0]['message']['content']
+        
+        # Получаем сгенерированный текст
+        ai_reply = response_json[0]['generated_text']
         display_text = ai_reply
 
         if "UPDATE_DATA:" in ai_reply:
@@ -165,7 +166,7 @@ def handle_game_action(message):
                 print("Ошибка БД:", e)
         bot.send_message(message.chat.id, display_text)
     except Exception as e: 
-        bot.send_message(message.chat.id, f"📴 Сбой ИИ (сервер перегружен, попробуйте еще раз).")
+        bot.send_message(message.chat.id, f"📴 Ошибка связи с сервером ИИ. Повторите попытку.")
 
 if __name__ == '__main__':
     bot.remove_webhook()
