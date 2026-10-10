@@ -230,6 +230,7 @@ if __name__ == '__main__':
         bot.remove_webhook()
         # Замените адрес ниже на ваш ТОЧНЫЙ внешний домен из панели Amvera
         bot.set_webhook(url=f"https://amvera.work{TELEGRAM_BOT_TOKEN}")
+
         print("Успешно: Вебхук установлен автоматически!")
     except Exception as webhook_error:
         print(f"Ошибка авто-вебхука: {str(webhook_error)}")
