@@ -20,7 +20,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот на автоматической шине ИИ запущен!"
+    return "ЛитРПГ Бот на стабильной шине Qwen запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -47,30 +47,42 @@ def init_db():
 
 init_db()
 
-# ИСПРАВЛЕНО НАВСЕГДА: Переходим на стабильный открытый шлюз бесплатных моделей через сторонний стабильный API-провайдер
+# ИСПРАВЛЕНО НАВСЕГДА: Переходим на сверхбыструю и свободную модель Qwen, которая не имеет жестких лимитов перегрузки
 def ask_free_rpg_ai(system_prompt, user_action):
     try:
-        url = "https://pollinations.ai"
+        url = "https://huggingface.co"
+        
+        # Формируем структуру диалога в стандартном формате ChatML для Qwen
+        formatted_prompt = f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{user_action}<|im_end|>\n<|im_start|>assistant\n"
         
         payload = {
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_action}
-            ],
-            "model": "openai",
-            "jsonMode": False
+            "inputs": formatted_prompt,
+            "parameters": {
+                "max_new_tokens": 600,
+                "temperature": 0.7,
+                "return_full_text": False
+            },
+            "options": {
+                "use_cache": False,
+                "wait_for_model": True
+            }
         }
         
-        headers = {"Content-Type": "application/json"}
-        # Используем Pollinations API через встроенную модель openai-gpt-4o, которая работает без лимитов и блокировок
-        res = requests.post(url, headers=headers, json=payload, timeout=25)
+        res = requests.post(url, json=payload, timeout=30)
         
         if res.status_code != 200:
-            return "Гейм-Мастер временно отвлекся, перелистывая книгу правил. Повторите ваше действие еще раз!"
+            return "Гейм-Мастер на мгновение задумался, сверяясь с древними свитками. Повторите ваше действие еще раз!"
             
-        return res.text.strip()
+        res_json = res.json()
+        
+        if isinstance(res_json, list) and len(res_json) > 0:
+            return res_json[0].get("generated_text", "").strip()
+        elif isinstance(res_json, dict) and "generated_text" in res_json:
+            return res_json["generated_text"].strip()
+            
+        return "Мастер потерял нить повествования. Попробуйте совершить действие снова."
     except Exception as e:
-        return f"Мастер временно потерял связь с астралом. Ошибка шины: {str(e)}"
+        return f"Мастер временно недоступен. Ошибка астральной шины: {str(e)}"
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -179,7 +191,7 @@ def handle_game_action(message):
             "Действие игрока: \"" + action + "\"\n\n"
             "В самом конце твоего художественного ответа обязательно добавь СТРОГО на новой строке системный блок в следующем формате:\n"
             "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-            "Изменяй характеристики в JSON в зависимости от происходящего в сюжете."
+            "Изменяй значения в JSON в зависимости от происходящего в сюжете."
         )
 
         ai_reply = ask_free_rpg_ai(system_prompt, action)
