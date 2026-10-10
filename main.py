@@ -6,13 +6,16 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧИ ИИ БОЛЬШЕ ВООБЩЕ НЕ НУЖНЫ!)
+# БЕЗОПАСНОСТЬ: Ключи загружаются из скрытых настроек Render (Environment)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 # =====================================================================
 
+MODEL_NAME = "meta-llama-3.1-70b-instruct"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
+# Подключение к БД с доступом по именам колонок
 def get_db_connection():
     conn = sqlite3.connect('litrpg_game.db')
     conn.row_factory = sqlite3.Row
@@ -20,7 +23,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот на сверхстабильной шине ИИ запущен!"
+    return "ЛитРПГ Бот на мощном ИИ GitHub Models успешно запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -47,27 +50,35 @@ def init_db():
 
 init_db()
 
-# Новая функция запроса к полностью свободному ИИ без использования внешних токенов
-def ask_free_rpg_ai(system_prompt, user_action):
+# Официальный метод отправки запроса к ИИ-моделям через шлюз GitHub
+def ask_github_ai(system_prompt, user_action):
     try:
-        url = "https://pollinations.ai"
+        url = "https://azure.com"
+        
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
         payload = {
+            "model": MODEL_NAME,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_action}
             ],
-            "model": "openai",
-            "jsonMode": False
+            "temperature": 0.7,
+            "max_tokens": 800
         }
-        # Отправляем через чистый POST JSON-запрос к неубиваемому хабу Pollinations
-        res = requests.post(url, json=payload, timeout=29)
+        
+        res = requests.post(url, headers=headers, json=payload, timeout=28)
         
         if res.status_code != 200:
-            return f"❌ Сервер ИИ временно перегружен (Код {res.status_code}). Попробуйте еще раз!"
+            return f"❌ Ошибка ИИ. Статус-код: {res.status_code}\nОтвет сервера: {res.text[:150]}"
             
-        return res.text.strip()
+        res_json = res.json()
+        return res_json['choices'][0]['message']['content'].strip()
     except Exception as e:
-        return f"❌ Сбой астральной шины данных: {str(e)}"
+        return f"❌ Не удалось отправить запрос в чертоги разума. Ошибка сети: {str(e)}"
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -179,8 +190,8 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в сюжете."
         )
 
-        # Вызов стабильного свободного ИИ
-        ai_reply = ask_free_rpg_ai(system_prompt, action)
+        # Вызов стабильного ИИ через GitHub Models API
+        ai_reply = ask_github_ai(system_prompt, action)
 
         if ai_reply.startswith("❌"):
             bot.reply_to(message, ai_reply)
