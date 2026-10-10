@@ -6,15 +6,13 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# НАСТРОЙКИ КЛЮЧЕЙ: Готовый рабочий токен ИИ уже встроен!
+# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧИ ИИ БОЛЬШЕ ВООБЩЕ НЕ НУЖНЫ!)
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-COHERE_API_KEY = "w5g" + "HhR6B" + "pL3k7" + "mN9xQ" + "2sWb" + "4vRt" + "1pLm" + "8zNx" + "5yQw" + "3tPz"
 # =====================================================================
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 app = Flask('')
 
-# Подключение к БД с доступом по именам колонок
 def get_db_connection():
     conn = sqlite3.connect('litrpg_game.db')
     conn.row_factory = sqlite3.Row
@@ -22,7 +20,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот на сверхстабильной модели Cohere Command R+ запущен!"
+    return "ЛитРПГ Бот на сверхстабильной шине ИИ запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -49,30 +47,27 @@ def init_db():
 
 init_db()
 
-# Официальный POST-метод обращения к ИИ Cohere через безопасную структуру payload
-def ask_cohere_ai(system_prompt, user_action):
+# Новая функция запроса к полностью свободному ИИ без использования внешних токенов
+def ask_free_rpg_ai(system_prompt, user_action):
     try:
-        url = "https://cohere.ai"
-        headers = {
-            "Authorization": f"Bearer {COHERE_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        url = "https://pollinations.ai"
         payload = {
-            "message": user_action,
-            "preamble": system_prompt,
-            "model": "command-r-plus",
-            "temperature": 0.7
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_action}
+            ],
+            "model": "openai",
+            "jsonMode": False
         }
+        # Отправляем через чистый POST JSON-запрос к неубиваемому хабу Pollinations
+        res = requests.post(url, json=payload, timeout=29)
         
-        res = requests.post(url, headers=headers, json=payload, timeout=25)
-        
-        if res.status_code == 200:
-            res_json = res.json()
-            return res_json.get("text", "").strip()
+        if res.status_code != 200:
+            return f"❌ Сервер ИИ временно перегружен (Код {res.status_code}). Попробуйте еще раз!"
             
-        return f"❌ Ошибка ИИ Cohere. Статус-код: {res.status_code}\nОтвет: {res.text[:150]}"
+        return res.text.strip()
     except Exception as e:
-        return f"❌ Не удалось отправить запрос в астрал. Ошибка сети: {str(e)}"
+        return f"❌ Сбой астральной шины данных: {str(e)}"
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -184,8 +179,8 @@ def handle_game_action(message):
             "Изменяй значения в JSON в зависимости от происходящего в сюжете."
         )
 
-        # Вызов стабильного ИИ Cohere Command R+
-        ai_reply = ask_cohere_ai(system_prompt, action)
+        # Вызов стабильного свободного ИИ
+        ai_reply = ask_free_rpg_ai(system_prompt, action)
 
         if ai_reply.startswith("❌"):
             bot.reply_to(message, ai_reply)
