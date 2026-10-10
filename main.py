@@ -225,4 +225,14 @@ def handle_game_action(message):
         bot.reply_to(message, f"⚠️ Не удалось обработать действие. Попробуйте еще раз.")
 
 if __name__ == '__main__':
+    # Бот САМ при старте отправляет команду в Telegram без браузера!
+    try:
+        bot.remove_webhook()
+        # Замените адрес ниже на ваш ТОЧНЫЙ внешний домен из панели Amvera
+        bot.set_webhook(url=f"https://amvera.work{TELEGRAM_BOT_TOKEN}")
+        print("Успешно: Вебхук установлен автоматически!")
+    except Exception as webhook_error:
+        print(f"Ошибка авто-вебхука: {str(webhook_error)}")
+        
     app.run(host='0.0.0.0', port=5000)
+
