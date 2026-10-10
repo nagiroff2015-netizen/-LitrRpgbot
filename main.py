@@ -6,8 +6,10 @@ import requests
 from flask import Flask, request
 
 # =====================================================================
-# ВШИТ ТОЛЬКО ТОКЕН БОТА (КЛЮЧИ ИИ БОЛЬШЕ ВООБЩЕ НЕ НУЖНЫ!)
+# АБСОЛЮТНАЯ БЕЗОПАСНОСТЬ: Ключи Яндекса скрыты в панели Render
 TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
+YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY")
+YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID")
 # =====================================================================
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
@@ -20,7 +22,7 @@ def get_db_connection():
 
 @app.route('/')
 def home():
-    return "ЛитРПГ Бот на неубиваемой шине ИИ успешно запущен!"
+    return "ЛитРПГ Бот на сверхстабильной отечественной платформе YandexGPT запущен!"
 
 @app.route('/' + str(TELEGRAM_BOT_TOKEN), methods=['GET', 'POST'])
 def get_message():
@@ -47,35 +49,37 @@ def init_db():
 
 init_db()
 
-# НАСТОЯЩИЙ НЕУБИВАЕМЫЙ ИИ: Работает через прокси-клиент без лимитов и блокировок Cloudflare
-def ask_free_rpg_ai(system_prompt, user_action):
+def ask_yandex_ai(system_prompt, user_action):
     try:
-        # Используем альтернативный, полностью открытый POST-эндпоинт свободного ИИ-хаба
-        url = "https://pollinations.ai"
+        url = "https://yandex.net"
+        
+        headers = {
+            "Authorization": f"Api-Key {YANDEX_API_KEY}",
+            "Content-Type": "application/json"
+        }
         
         payload = {
+            "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt-lite/latest",
+            "completionOptions": {
+                "stream": False,
+                "temperature": 0.6,
+                "maxTokens": "1000"
+            },
             "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_action}
-            ],
-            "model": "openai-gpt-4o",  # Подключаем мощную языковую модель GPT-4o для развернутых ответов
-            "jsonMode": False
+                {"role": "system", "text": system_prompt},
+                {"role": "user", "text": user_action}
+            ]
         }
         
-        # Передаем кастомный User-Agent, чтобы шлюз принимал нас за обычный браузер и не выдавал 405
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
+        res = requests.post(url, headers=headers, json=payload, timeout=25)
         
-        res = requests.post(url, headers=headers, json=payload, timeout=29)
-        
-        if res.status_code == 200 and len(res.text.strip()) > 10:
-            return res.text.strip()
+        if res.status_code == 200:
+            res_json = res.json()
+            return res_json['result']['alternatives'][0]['message']['text'].strip()
             
-        return f"❌ Мастер временно отвлекся. Сервер вернул код {res.status_code}. Повторите ход!"
+        return f"❌ Ошибка Яндекса. Статус: {res.status_code}\nОтвет: {res.text[:150]}"
     except Exception as e:
-        return f"❌ Связь с чертогами разума оборвалась. Ошибка сети: {str(e)}"
+        return f"❌ Ошибка подключения к серверам РФ: {str(e)}"
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -184,11 +188,10 @@ def handle_game_action(message):
             "Действие игрока: \"" + action + "\"\n\n"
             "В самом конце твоего художественного ответа обязательно добавь СТРОГО на новой строке системный блок в следующем формате:\n"
             "UPDATE_DATA: {\"level\": 1, \"hp\": 100, \"mp\": 50, \"gold\": 10, \"inventory\": \"кинжал\", \"location\": \"Деревня\"}\n"
-            "Изменяй значения в JSON в зависимости от происходящего в созданном тобой сюжете."
+            "Изменяй значения в JSON в зависимости от происходящего в сюжете."
         )
 
-        # Вызов полноценного свободного ИИ GPT-4o
-        ai_reply = ask_free_rpg_ai(system_prompt, action)
+        ai_reply = ask_yandex_ai(system_prompt, action)
 
         if ai_reply.startswith("❌"):
             bot.reply_to(message, ai_reply)
